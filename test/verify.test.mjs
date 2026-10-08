@@ -118,13 +118,13 @@ process.exit(actual === "dark" ? 0 : 1);
 `);
   git(root, "add", ".");
   git(root, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "-qm", "Broken persistence fixture");
-  const failure = invoke(root, ["run", "theme-persists"]);
+  const failure = invoke(root, ["verify", "theme-persists"]);
   expect(failure.code).toBe(1);
   const before = saved(root);
   expect(before.data.checks[0].status).toBe("failed");
   expect(readFileSync(join(before.directory, "theme-persists/output.log"), "utf8")).toContain("Theme after restart: light");
   write(root, "app.mjs", readFileSync(join(root, "app.mjs"), "utf8").replace('theme: "light"', "theme: process.argv[3]"));
-  const success = invoke(root, ["run", "theme-persists"]);
+  const success = invoke(root, ["verify", "theme-persists"]);
   expect(success.code).toBe(0);
   const after = saved(root);
   expect(after.data.checks[0].status).toBe("passed");
@@ -133,9 +133,9 @@ process.exit(actual === "dark" ? 0 : 1);
   expect(after.directory).not.toBe(before.directory);
   expect(readFileSync(join(after.directory, "theme-persists/artifacts/observation.json"), "utf8")).toContain('"actual":"dark"');
   expect(existsSync(join(before.directory, "result.json"))).toBe(true);
-  expect(invoke(root, ["report"]).code).toBe(0);
+  expect(invoke(root, ["view", "report"]).code).toBe(0);
   write(root, "app.mjs", `${readFileSync(join(root, "app.mjs"), "utf8")}\nconsole.error("Changed again");\n`);
-  const stale = invoke(root, ["report"]);
+  const stale = invoke(root, ["view", "report"]);
   expect(stale.code).toBe(2);
   expect(stale.output).toContain("Source changed");
 });
@@ -147,7 +147,7 @@ test("named selection includes required checks and discloses omitted checks", ()
     unrelated: { command: "false", expect: "Another feature works" },
   });
   mkdirSync(join(root, "nested"));
-  const result = invoke(join(root, "nested"), ["run", "feature"]);
+  const result = invoke(join(root, "nested"), ["verify", "feature"]);
   expect(result.code).toBe(1);
   expect(result.output).toContain("Not selected: unrelated");
   const { data, directory } = saved(root);
@@ -157,60 +157,60 @@ test("named selection includes required checks and discloses omitted checks", ()
 
 test("an empty setup and unknown checks cannot report success", () => {
   const root = project();
-  expect(invoke(root, ["run"]).code).toBe(2);
-  expect(invoke(root, ["run", "missing"]).code).toBe(2);
-  expect(invoke(root, ["report"]).code).toBe(2);
+  expect(invoke(root, ["verify"]).code).toBe(2);
+  expect(invoke(root, ["verify", "missing"]).code).toBe(2);
+  expect(invoke(root, ["view", "report"]).code).toBe(2);
 });
 
 test("malformed configuration is rejected before executing commands", () => {
   const root = project({ invalid: { command: "touch executed", expect: "Valid evidence", artifacts: ["../outside.txt"] } });
-  expect(invoke(root, ["run"]).code).toBe(2);
+  expect(invoke(root, ["verify"]).code).toBe(2);
   expect(existsSync(join(root, "executed"))).toBe(false);
 });
 
 test("missing fresh evidence cannot reuse a previous run's artifact", () => {
   const root = project({ evidence: { command: "bun -e 'require(\"node:fs\").writeFileSync(process.env.VERIFY_ARTIFACTS + \"/proof.txt\", \"observed\")'", expect: "Capture proof", artifacts: ["proof.txt"] } });
-  expect(invoke(root, ["run"]).code).toBe(0);
+  expect(invoke(root, ["verify"]).code).toBe(0);
   const previous = saved(root);
   setChecks(root, { evidence: { command: "true", expect: "Capture proof", artifacts: ["proof.txt"] } });
-  expect(invoke(root, ["run"]).code).toBe(2);
+  expect(invoke(root, ["verify"]).code).toBe(2);
   expect(saved(root).data.checks[0].status).toBe("inconclusive");
   expect(existsSync(join(previous.directory, "evidence/artifacts/proof.txt"))).toBe(true);
 });
 
 test("a saved success becomes inconclusive when its evidence is altered", () => {
   const root = project({ evidence: { command: "bun -e 'require(\"node:fs\").writeFileSync(process.env.VERIFY_ARTIFACTS + \"/proof.txt\", \"observed\")'", expect: "Capture proof", artifacts: ["proof.txt"] } });
-  expect(invoke(root, ["run"]).code).toBe(0);
+  expect(invoke(root, ["verify"]).code).toBe(0);
   const { directory } = saved(root);
   writeFileSync(join(directory, "evidence/artifacts/proof.txt"), "different observation");
-  const report = invoke(root, ["report"]);
+  const report = invoke(root, ["view", "report"]);
   expect(report.code).toBe(2);
   expect(report.output).toContain("evidence changed");
 });
 
 test("changes made by a command leave its result inconclusive", () => {
   const root = project({ changes: { command: "bun -e 'require(\"node:fs\").writeFileSync(\"changed.txt\", \"new source\")'", expect: "Check unchanged source" } });
-  const result = invoke(root, ["run"]);
+  const result = invoke(root, ["verify"]);
   expect(result.code).toBe(2);
   expect(result.output).toContain("Source changed");
 });
 
 test("unavailable observations and malformed saved reports remain inconclusive", () => {
   const root = project({ blocked: { command: "bun -e 'process.exit(2)'", expect: "Environment is available" } });
-  expect(invoke(root, ["run"]).code).toBe(2);
+  expect(invoke(root, ["verify"]).code).toBe(2);
   const { directory } = saved(root);
   writeFileSync(join(directory, "result.json"), JSON.stringify({ version: 1, checks: [] }));
-  const result = invoke(root, ["report"]);
+  const result = invoke(root, ["view", "report"]);
   expect(result.code).toBe(2);
   expect(result.output).toContain("Invalid saved verification report");
 });
 
 test("an interrupted attempt replaces an earlier success with an incomplete latest run", async () => {
   const root = project({ check: { command: "true", expect: "Complete the check" } });
-  expect(invoke(root, ["run"]).code).toBe(0);
+  expect(invoke(root, ["verify"]).code).toBe(0);
   const previous = saved(root);
   setChecks(root, { check: { command: "bun -e 'console.log(\"READY\"); setTimeout(() => {}, 200)'", expect: "Complete the check" } });
-  const child = spawn(process.execPath, [cli, "run"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [cli, "verify"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", chunk => {
     output += chunk;
@@ -218,7 +218,7 @@ test("an interrupted attempt replaces an earlier success with an incomplete late
   });
   await once(child, "close");
   expect(saved(root).directory).not.toBe(previous.directory);
-  const result = invoke(root, ["report"]);
+  const result = invoke(root, ["view", "report"]);
   expect(result.code).toBe(2);
   expect(result.output).toContain("latest run did not finish");
 });

@@ -8,7 +8,7 @@ bun test
 
 The tests create disposable projects and exercise the real CLI, including a broken-then-fixed persistence scenario, retained evidence, source freshness, and installation that preserves existing instructions.
 
-For live local development, run `bun link` from this directory, then `verify install`. The personal skill and executable point at the working copy.
+For live local development, run `bun link` from this directory, then `groundwork install`. The personal skill and executable point at the working copy.
 
 Keep the shared code independent of any application's stack. Put application setup, navigation, and assertions in the adopting project. Update the skill and user documentation when the command contract changes.
 

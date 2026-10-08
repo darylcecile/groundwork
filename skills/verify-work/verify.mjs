@@ -12,12 +12,12 @@ import { homedir } from "node:os";
 const skillDirectory = dirname(fileURLToPath(import.meta.url));
 const globalInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `VERIFY.md` and `verify.json` when present. Set up project verification files when I ask to adopt the framework.\n";
 const projectInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Read `VERIFY.md` for this project's behaviour guide and use `verify.json` for repeatable checks.\n";
-const help = `verify — Groundwork checks and evidence
+const help = `groundwork — checks and evidence
 
-  verify install          Register the shared personal skill and instructions
-  verify init [directory] Set up a project without replacing existing files
-  verify run [name ...]   Run all checks, or named checks plus required checks
-  verify report           Show the latest result, source freshness, and evidence
+  groundwork install           Register the shared personal skill and instructions
+  groundwork init [directory]  Set up a project without replacing existing files
+  groundwork verify [name ...] Run all checks, or named checks plus required checks
+  groundwork view report       Show the latest result, source freshness, and evidence
 
 Exit codes: 0 passed, 1 failed, 2 inconclusive or invalid setup.
 `;
@@ -107,7 +107,7 @@ function projectRoot() {
     if (parent === directory || existsSync(join(directory, ".git"))) break;
     directory = parent;
   }
-  throw new Error("No verify.json found. Adopt the project with verify init first.");
+  throw new Error("No verify.json found. Adopt the project with groundwork init first.");
 }
 
 function config(root) {
@@ -287,9 +287,9 @@ try {
     install();
   } else if (command === "init" && args.length <= 1) {
     init(args[0]);
-  } else if (command === "run") {
+  } else if (command === "verify") {
     process.exitCode = await run(projectRoot(), args);
-  } else if (command === "report" && args.length === 0) {
+  } else if (command === "view" && args.length === 1 && args[0] === "report") {
     process.exitCode = report(projectRoot());
   } else {
     throw new Error(`Unknown command or arguments.\n${help}`);

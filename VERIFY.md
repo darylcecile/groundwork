@@ -2,8 +2,8 @@
 
 ## Run and control
 
-- CLI: `bun skills/verify-work/verify.mjs <command>` or the installed `verify`.
-- Required check: `verify run tests`.
+- CLI: `bun skills/verify-work/verify.mjs <command>` or the installed `groundwork`.
+- Required check: `groundwork verify tests`.
 - Implementation: `skills/verify-work/verify.mjs`.
 - Integration tests: `test/verify.test.mjs` and `pr-verification/test/verification.test.mjs`.
 - After workflow changes: `actionlint .github/workflows/verify.yml`.
@@ -12,7 +12,7 @@
 
 ### Adopt a project
 
-Start with an existing project that has its own instructions and ignore rules. Run `verify init`. It creates the behaviour guide and check files and appends the workflow reference and evidence ignore rule. Existing content survives, and a second run leaves it intact.
+Start with an existing project that has its own instructions and ignore rules. Run `groundwork init`. It creates the behaviour guide and check files and appends the workflow reference and evidence ignore rule. Existing content survives, and a second run leaves it intact.
 
 ### Verify a behaviour and review evidence
 
@@ -20,7 +20,7 @@ The integration test creates a small preferences CLI with broken theme persisten
 
 ### Install the personal workflow
 
-`verify install` registers the skill and adds the instruction to both products. The installation test uses an isolated home directory, including shared instruction symlinks, to verify preservation and repeatability.
+`groundwork install` registers the skill and adds the instruction to both products. The installation test uses an isolated home directory, including shared instruction symlinks, to verify preservation and repeatability.
 
 ### Final PR verification
 
