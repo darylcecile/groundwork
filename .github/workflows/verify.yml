@@ -1,0 +1,126 @@
+name: Final PR verification
+
+on:
+  workflow_call:
+    inputs:
+      checks:
+        description: Commands that verify the importing project
+        required: true
+        type: string
+      setup:
+        description: Commands that install dependencies and prepare the project
+        default: ''
+        type: string
+      artifacts:
+        description: Newline-separated evidence files or directories, relative to working-directory
+        default: ''
+        type: string
+      working-directory:
+        description: Project directory within the importing repository
+        default: .
+        type: string
+      verifier-ref:
+        description: Groundwork ref matching the ref used to call this workflow
+        default: main
+        type: string
+    secrets:
+      COPILOT_TOKEN:
+        description: Credential with Copilot Requests permission and Contents read access to Groundwork
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify checks and behaviour
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.verify.outputs.result }}
+      artifact-url: ${{ steps.evidence.outputs.artifact-url }}
+      verifier-sha: ${{ steps.verifier.outputs.commit }}
+    steps:
+      - name: Check out the importing PR
+        uses: actions/checkout@v7.0.1
+        with:
+          path: project
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Check out the verifier
+        id: verifier
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: darylcecile/groundwork
+          ref: ${{ inputs.verifier-ref }}
+          token: ${{ secrets.COPILOT_TOKEN }}
+          path: verifier
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.3.10
+
+      - name: Install Copilot CLI
+        run: bun add --global --trust @github/copilot@1.0.93
+
+      - name: Verify the proposed change
+        id: verify
+        env:
+          PR_VERIFY_REPOSITORY: ${{ github.workspace }}/project
+          PR_VERIFY_DIRECTORY: ${{ inputs.working-directory }}
+          PR_VERIFY_SETUP: ${{ inputs.setup }}
+          PR_VERIFY_CHECKS: ${{ inputs.checks }}
+          PR_VERIFY_ARTIFACTS: ${{ inputs.artifacts }}
+          PR_VERIFY_OUTPUT: ${{ runner.temp }}/pr-verification
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+        run: bun "$GITHUB_WORKSPACE/verifier/pr-verification/scripts/verify.mjs"
+
+      - name: Upload results and evidence
+        id: evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: pr-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-verification
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  report:
+    name: Report on the importing PR
+    needs: verify
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out the reporting code
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: darylcecile/groundwork
+          ref: ${{ needs.verify.outputs.verifier-sha || inputs.verifier-ref }}
+          token: ${{ secrets.COPILOT_TOKEN }}
+          path: verifier
+          persist-credentials: false
+
+      - name: Update the verification comment
+        uses: actions/github-script@v9.0.0
+        env:
+          RESULT_JSON: ${{ needs.verify.outputs.result }}
+          ARTIFACT_URL: ${{ needs.verify.outputs.artifact-url }}
+          VERIFICATION_CONCLUSION: ${{ needs.verify.result }}
+        with:
+          script: |
+            const { publishComment } = await import(`${process.env.GITHUB_WORKSPACE}/verifier/pr-verification/scripts/report.mjs`);
+            await publishComment({
+              github,
+              context,
+              raw: process.env.RESULT_JSON,
+              artifactUrl: process.env.ARTIFACT_URL,
+              conclusion: process.env.VERIFICATION_CONCLUSION,
+            });

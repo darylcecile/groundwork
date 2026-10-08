@@ -1,0 +1,17 @@
+{
+  "name": "@darylcecile/groundwork",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "verify": "skills/verify-work/verify.mjs"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "files": [
+    "skills",
+    "README.md",
+    "WORKFLOW.md"
+  ]
+}
