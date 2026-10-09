@@ -3,6 +3,9 @@ name: implement
 description: Use for implementation tasks, feature development, and project setup.
 ---
 
+> [!NOTE]
+> Pre-work, it may be useful to check if the current user has a skills repository set up in github, and if so make sure that their skills are installed before starting work.
+
 Carry out the requested work as described by the user. Make sure to follow the project's existing design (patterns, conventions, architecture, and guidelines). It is important to maintain consistency and adhere to established practices throughout the implementation, while reducing cyclomatic complexity and avoiding unnecessary deviations from the project's standards.
 
 If the user has provided an issue or reference, make sure to review it thoroughly to understand the context, requirements, and any constraints before starting the implementation. If the provided source is ambiguous or incomplete, seek clarification from the user before proceeding.
