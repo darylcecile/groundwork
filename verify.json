@@ -3,7 +3,46 @@
     "tests": {
       "command": "bun test",
       "expect": "The CLI and PR verification preserve setup and accurately report check results, behaviour, failures, and evidence",
-      "required": true
+      "required": true,
+      "covers": ["adoption", "coverage", "catalogue", "drivers", "pr-verification"]
+    }
+  },
+  "behaviours": {
+    "adoption": {
+      "description": "Adopt projects and install the shared workflow without replacing user setup",
+      "paths": ["skills/verify-work/**", "package.json", "test/verify.test.mjs"],
+      "entry": "groundwork init / groundwork install",
+      "guide": "VERIFY.md#adopt-a-project"
+    },
+    "coverage": {
+      "description": "Account for every planned requirement using checks and retained observations",
+      "paths": ["lib/model.mjs", "test/runner.test.mjs"],
+      "entry": "groundwork verify --plan <file>",
+      "guide": "VERIFY.md#plan-and-select-verification"
+    },
+    "catalogue": {
+      "description": "Discover behaviours and enforce applicable project invariants",
+      "paths": ["lib/config.mjs", "test/config.test.mjs", "verify.json"],
+      "entry": "groundwork view guide / groundwork verify --changed <ref>",
+      "guide": "VERIFY.md#plan-and-select-verification"
+    },
+    "drivers": {
+      "description": "Exercise lifecycle drivers, retain repeated trials, and compare source revisions",
+      "paths": ["lib/runner.mjs", "test/runner.test.mjs"],
+      "entry": "groundwork verify / groundwork verify --base <ref>",
+      "guide": "VERIFY.md#exercise-a-driver-and-compare-revisions"
+    },
+    "pr-verification": {
+      "description": "Verify a PR against a frozen plan and report results in the importing repository",
+      "paths": ["pr-verification/**", ".github/workflows/verify.yml"],
+      "guide": "VERIFY.md#final-pr-verification"
+    }
+  },
+  "invariants": {
+    "complete-evidence": {
+      "description": "Missing planned requirements or declared evidence cannot produce a passing verification result",
+      "checks": ["tests"],
+      "guide": "VERIFY.md#verify-a-behaviour-and-review-evidence"
     }
   }
 }

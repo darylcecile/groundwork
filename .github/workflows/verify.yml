@@ -4,9 +4,17 @@ on:
   workflow_call:
     inputs:
       checks:
-        description: Commands that verify the importing project
-        required: true
+        description: Project verification commands; when omitted use the project's verify.json
+        default: ''
         type: string
+      plan:
+        description: Optional project-relative task plan; otherwise the agent prepares one from the PR
+        default: ''
+        type: string
+      compare-base:
+        description: Run comparison-enabled drivers against the PR base as well
+        default: false
+        type: boolean
       setup:
         description: Commands that install dependencies and prepare the project
         default: ''
@@ -74,6 +82,8 @@ jobs:
           PR_VERIFY_DIRECTORY: ${{ inputs.working-directory }}
           PR_VERIFY_SETUP: ${{ inputs.setup }}
           PR_VERIFY_CHECKS: ${{ inputs.checks }}
+          PR_VERIFY_PLAN: ${{ inputs.plan }}
+          PR_VERIFY_COMPARE_BASE: ${{ inputs.compare-base }}
           PR_VERIFY_ARTIFACTS: ${{ inputs.artifacts }}
           PR_VERIFY_OUTPUT: ${{ runner.temp }}/pr-verification
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}

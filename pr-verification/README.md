@@ -1,6 +1,6 @@
 # PR verification
 
-A final verification pass for GitHub pull requests. It runs the project's configured checks, then a Copilot agent assesses the PR's intended outcome and exercises relevant behaviour. One updated PR comment combines the results with links to logs and captured assets.
+A final verification pass for GitHub pull requests. It records the required outcomes, runs project checks and active invariants, then exercises remaining behaviour against that fixed plan. One updated PR comment combines requirement coverage, observations, and links to captured evidence.
 
 The workflow runs and comments in the **repository that imports it**. This first version supports PR branches within that repository.
 
@@ -46,7 +46,9 @@ GitHub supports sharing this private personal repository's workflow with other p
 
 ### Inputs
 
-- **`checks`** — required shell commands for existing project verification. A failed command stops this block and remains a failure in the final result.
+- **`checks`** — shell commands for existing project verification. A failed command stops this block and remains a failure in the final result. When omitted, the workflow uses the project's `verify.json` catalogue to select checks for the changed areas.
+- **`plan`** — optional project-relative JSON plan. Otherwise the agent prepares a plan from the PR, project guidance, and available checks before verification begins.
+- **`compare-base`** — opt into running source-aware, comparison-enabled drivers against the PR base. Defaults to `false`.
 - **`setup`** — optional commands to install dependencies and prepare the project.
 - **`artifacts`** — optional newline-separated files or directories relative to the project directory. Paths are copied into the evidence bundle; glob patterns are not used.
 - **`working-directory`** — project directory within the importing checkout; defaults to `.`.
@@ -56,22 +58,24 @@ Commands run in Bash on an Ubuntu GitHub-hosted runner. Bun and Copilot CLI are 
 
 ## What it verifies
 
-1. Check out the importing PR's proposed merge revision.
-2. Run setup and the configured project checks, retaining their logs.
-3. Give the agent the PR description, checked source, comparison revision, project tools, and check results.
-4. Have the agent exercise acceptance conditions, inspect relevant UI/API/CLI behaviour, capture evidence, and report gaps. It assesses the change rather than fixing it.
-5. Validate the agent's structured claims and referenced evidence. A successful agent process by itself is insufficient for a passing result.
-6. Upload the evidence bundle and update one PR comment. A reporting job holds the PR-writing permission. It checks the current PR head before publishing and skips results for an older commit.
+1. Check out the importing PR's proposed merge revision and capture its context.
+2. Load the supplied plan or have the agent identify the required outcomes. The runner freezes the plan and adds active project invariants.
+3. Run setup, configured checks, relevant named drivers, and invariant checks, retaining each result. Local and PR verification use the same driver and evidence contract.
+4. Have the agent inspect the results and exercise remaining requirements through relevant UI/API/CLI entry points. Observations name the plan requirements they establish.
+5. Validate observations and retained evidence, then account for every requirement. An omitted outcome remains unverified. The agent cannot remove requirements by rewriting the plan.
+6. Upload the evidence bundle and update one PR comment. A reporting job holds the PR-writing permission. It checks the current PR head, title, and description before publishing so a changed request receives a fresh verification plan.
 
 The result is **passed**, **failed**, or **inconclusive**. Failed configured checks remain failures even if the agent reports positive observations. Missing reports, unavailable observations, missing evidence, and source changes prevent a passing result. The verification job fails for both failed and inconclusive outcomes.
 
 ## PR report and assets
 
-The comment includes the PR commit and tested checkout, setup/check results, behaviour observations, gaps, workflow logs, and a **Download evidence** link.
+The comment includes the PR commit and tested checkout, requirement coverage, setup/check results, behaviour observations, comparison and trial summaries, verification context, gaps, and a **Download evidence** link.
 
-The artifact contains `result.json`, stage logs, the agent report and transcript, captured evidence under `agent/`, and declared project artifacts under `project/`. Screenshots, recordings, traces, and HTML reports are downloadable through that link. Retention follows the importing repository's artifact settings.
+The artifact contains `plan.json`, `result.json`, stage logs, the agent report and transcripts, trial-specific driver evidence, captured agent evidence under `agent/`, and declared project artifacts under `project/`. Screenshots, recordings, traces, and HTML reports are downloadable through that link. Retention follows the importing repository's artifact settings.
 
 The workflow uses the importing project's existing tests and application-control tools, along with project verification guidance when available.
+
+See the [verification reference](../skills/verify-work/references/verification.md) for plans, catalogue metadata, driver results, and comparisons. Bind requirements only to checks that genuinely assert them; a generic build command does not establish an application's user behaviour.
 
 ## Development
 

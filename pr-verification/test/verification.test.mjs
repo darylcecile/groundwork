@@ -39,18 +39,26 @@ function fixture(agent = "valid") {
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const output = process.env.PR_VERIFY_OUTPUT;
-writeFileSync(join(output, "agent-was-run.txt"), "yes");
 const mode = process.env.TEST_AGENT;
+if (process.env.GROUNDWORK_AGENT_PHASE === "planning") {
+  if (mode === "missing-plan") process.exit(0);
+  const requirements = [{id: "behaviour", expect: "The requested behaviour works"}];
+  if (["incomplete", "mutate-plan"].includes(mode)) requirements.push({id: "preserved", expect: "Existing behaviour is preserved"});
+  writeFileSync(join(output, "plan.json"), JSON.stringify({goal: "Verify the proposed behaviour", requirements}));
+  process.exit(0);
+}
+writeFileSync(join(output, "agent-was-run.txt"), "yes");
 if (mode === "exit") process.exit(1);
 if (mode === "missing-report") process.exit(0);
 if (mode === "invalid") { writeFileSync(join(output, "agent.json"), "{}"); process.exit(0); }
 if (mode === "mutate") writeFileSync("app.txt", "changed by verifier");
+if (mode === "mutate-plan") writeFileSync(join(output, "plan.json"), JSON.stringify({goal: "Verify only one item", requirements: [{id: "behaviour", expect: "The requested behaviour works"}]}));
 mkdirSync(join(output, "agent"), { recursive: true });
 if (mode !== "missing-evidence") writeFileSync(join(output, "agent", "observation.txt"), "Observed the configured behaviour");
 const evidence = mode === "self-report" ? ["agent.json"] : ["agent/observation.txt"];
 writeFileSync(join(output, "agent.json"), JSON.stringify({
   summary: "Observed the requested behaviour.",
-  checks: [{ claim: "The requested behaviour works", status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
+  checks: [{ claim: "The requested behaviour works", covers: ["behaviour"], status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
   gaps: mode === "gap" ? ["The required browser is unavailable"] : []
 }));
 `);
@@ -61,6 +69,7 @@ writeFileSync(join(output, "agent.json"), JSON.stringify({
     GITHUB_OUTPUT: join(root, "github-output"), COPILOT_GITHUB_TOKEN: "test-copilot-credential",
     PR_VERIFY_REPOSITORY: project, PR_VERIFY_OUTPUT: output, PR_VERIFY_CHECKS: "true",
     PR_VERIFY_SETUP: "", PR_VERIFY_DIRECTORY: ".", PR_VERIFY_ARTIFACTS: "",
+    PR_VERIFY_PLAN: "", PR_VERIFY_COMPARE_BASE: "false",
   } };
 }
 
@@ -98,6 +107,56 @@ test("agent-observed failures fail the final verification even when configured c
   expect(result.code).toBe(1);
   expect(result.report.checks.status).toBe("passed");
   expect(result.report.status).toBe("failed");
+});
+
+test("every planned requirement needs coverage even after successful checks and a positive agent report", () => {
+  const result = run(fixture("incomplete"));
+  expect(result.code).toBe(2);
+  expect(result.report.checks.status).toBe("passed");
+  expect(result.report.agent.execution.status).toBe("passed");
+  expect(result.report.verification.coverage.map(item => item.status)).toEqual(["verified", "unverified"]);
+  const comment = formatComment(result.report, {artifactUrl: "https://example.test/evidence", runUrl: "https://example.test/run", conclusion: "failure"});
+  expect(comment).toContain("unverified: preserved");
+});
+
+test("the verification agent cannot remove requirements by rewriting the plan", () => {
+  const value = fixture("mutate-plan");
+  const result = run(value);
+  expect(result.code).toBe(2);
+  expect(result.report.verification.plan.requirements).toHaveLength(2);
+  expect(JSON.parse(readFileSync(join(value.output, "plan.json"), "utf8")).requirements).toHaveLength(2);
+  expect(result.report.problems.join(" ")).toContain("plan was changed");
+});
+
+test("planning failure leaves configured check results available but cannot produce a passing outcome", () => {
+  const value = fixture("missing-plan");
+  const result = run(value);
+  expect(result.code).toBe(2);
+  expect(result.report.checks.status).toBe("passed");
+  expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
+});
+
+test("project catalogue checks and invariants use the shared runner when the workflow omits a command block", () => {
+  const value = fixture();
+  write(join(value.project, "verify.json"), JSON.stringify({
+    checks: {
+      feature: {command: "true", expect: "The feature passes", covers: ["feature"]},
+      boundary: {command: "false", expect: "The required boundary holds"},
+    },
+    behaviours: {feature: {description: "The feature works", paths: ["app.txt"]}},
+    invariants: {boundary: {description: "Preserve the boundary", checks: ["boundary"]}},
+  }));
+  const result = run(value, {PR_VERIFY_CHECKS: ""});
+  expect(result.code).toBe(1);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature", "boundary"]);
+  expect(result.report.verification.coverage.find(item => item.id === "invariant:boundary").status).toBe("failed");
+});
+
+test("a multi-command block stops at the failed check", () => {
+  const value = fixture();
+  const result = run(value, {PR_VERIFY_CHECKS: "false\ntouch should-not-run\ntrue"});
+  expect(result.code).toBe(1);
+  expect(existsSync(join(value.project, "should-not-run"))).toBe(false);
 });
 
 test.each(["missing-report", "invalid", "missing-evidence", "self-report", "gap", "exit"])("%s cannot establish a passing verification", mode => {
@@ -154,7 +213,7 @@ function client(event, comments = [], currentSha = event.pull_request.head.sha) 
     calls,
     github: {
       rest: {
-        pulls: { get: async input => { calls.push(["get", input]); return { data: { head: { sha: currentSha } } }; } },
+        pulls: { get: async input => { calls.push(["get", input]); return { data: { ...event.pull_request, head: { sha: currentSha } } }; } },
         issues: {
           listComments: () => {},
           createComment: async input => { calls.push(["create", input]); return input; },
@@ -199,6 +258,15 @@ test("a stale PR head does not overwrite the current verification comment", asyn
   const result = await publishComment({ ...api, raw: "", conclusion: "cancelled" });
   expect(result.skipped).toContain("newer head");
   expect(api.calls.map(([method]) => method)).toEqual(["get"]);
+});
+
+test("an edited PR request cannot receive a result based on its old requirement plan", async () => {
+  const value = fixture();
+  const api = client(value.event);
+  api.github.rest.pulls.get = async () => ({ data: { ...value.event.pull_request, body: "The requested outcome has changed" } });
+  const result = await publishComment({ ...api, raw: "", conclusion: "success" });
+  expect(result.skipped).toContain("request changed");
+  expect(api.calls).toEqual([]);
 });
 
 test("a mismatched or absent result produces an inconclusive comment rather than trusting another PR's report", async () => {

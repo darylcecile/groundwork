@@ -1,15 +1,16 @@
 # Groundwork
 
-A small personal workflow for GitHub Copilot CLI/app and OpenCode 2. Keep working through normal chat. The agent preserves the intended outcome, makes the change, exercises it, and brings back evidence you can review.
+A small personal workflow for GitHub Copilot CLI/app and OpenCode 2. Give the agent a task in normal chat. It records the intended outcome, makes the change, exercises the relevant behaviour, and brings back evidence for each requirement.
 
 - **[Workflow and confidence framework](WORKFLOW.md):** what the agent does and what counts as verified.
 - **`verify-work` skill:** the same workflow in both products.
-- **`groundwork` CLI:** repeatable project checks, logs, artifacts, and source-aware reports.
+- **[Verification reference](skills/verify-work/references/verification.md):** plans, behaviour catalogues, project invariants, drivers, and comparisons.
+- **`groundwork` CLI:** repeatable checks, requirement coverage, retained evidence, and source-aware reports.
 - **[PR verification workflow](pr-verification/README.md):** a final CI pass with project checks, agent-led verification, and a PR comment linking the results and evidence.
 
 ## Install
 
-Requires Bun and Git. The projects being checked can use any language or toolchain.
+Requires Bun, Git, and Bash. The projects being checked can use any language or toolchain.
 
 Install from GitHub using Bun, with SSH access to the private repository:
 
@@ -18,7 +19,19 @@ bun add --global git@github.com:darylcecile/groundwork.git
 groundwork install
 ```
 
-`groundwork install` registers the personal skill at `~/.agents/skills/verify-work` and adds a short instruction to Copilot and OpenCode's existing global instructions. Start a new Copilot session. For already-open OpenCode projects, run `opencode2 reload` once to refresh skill discovery.
+`groundwork install` registers every bundled skill under `~/.agents/skills/` and adds a short instruction to Copilot and OpenCode's existing global instructions. Start a new Copilot session and reload OpenCode after installing.
+
+## Update
+
+```sh
+groundwork update
+```
+
+This updates the globally installed package through Bun, then runs the updated installer to register new skills and refresh Groundwork's existing skill links. Refresh your agent session afterward to pick up the changes.
+
+For an older installation without this command, run `bun update --global @darylcecile/groundwork` followed by `groundwork install` once.
+
+For a linked development checkout, the command registers the skills in that checkout; update the source with Git when needed.
 
 ## Try it in a project
 
@@ -29,55 +42,38 @@ Open the project in Copilot or OpenCode and say:
 The agent runs `groundwork init` and fills in two project files:
 
 - **`VERIFY.md`:** the behaviour guide—how to run the project, reach the feature, and observe the expected result.
-- **`verify.json`:** named commands that check concrete expectations.
+- **`verify.json`:** named checks, with optional behaviour mappings and enforced project invariants.
 
-Commit those files with the project when ready. Run evidence stays locally in the ignored `.verify/` directory. After setup, give the agent tasks normally.
+Commit those files with the project when ready. Existing check configurations remain valid; add catalogue entries and richer drivers as they become useful.
+
+For multi-part changes, the agent saves a verification plan, reuses the project's checks and relevant [playbooks](skills/verify-work/playbooks.md), and closes every requirement or explains its gap. Straightforward tasks can track their outcomes in the conversation. Plans such as `.verify/plan.json` and run evidence stay in the ignored `.verify/` directory. Continue giving the agent tasks normally.
 
 ## Commands
 
+The agent uses these as needed:
+
 ```sh
-groundwork init                   # Set up the current project, preserving existing files
-groundwork verify                 # Run every configured check
-groundwork verify theme-persists  # Run this check plus checks marked required
-groundwork view report            # Show the latest run and whether its source is still current
+groundwork init                              # Adopt the current project
+groundwork view guide theme                  # Discover related behaviours and checks
+groundwork verify                            # Run every configured check
+groundwork verify theme-persists --plan .verify/plan.json
+groundwork verify --changed main --plan .verify/plan.json
+groundwork view report                       # Inspect the latest result and evidence
 ```
 
-The agent can also run `bun <skill-directory>/verify.mjs` if `groundwork` is unavailable on its PATH.
+Named and change-aware runs also include required checks and active invariant checks. Unmapped changes and behaviours without checks help identify planning gaps. The agent can use `--base <ref>` with a source-aware driver to reproduce a regression or compare measurements.
 
-Example `verify.json` (replace these commands with ones that actually exist):
+See the [verification reference](skills/verify-work/references/verification.md) for the complete plan/configuration example, driver result format, and comparison contract. The agent can also run `bun <skill-directory>/verify.mjs` from the project when `groundwork` is unavailable on its PATH.
 
-```json
-{
-  "checks": {
-    "types": {
-      "command": "bun run typecheck",
-      "expect": "The project's type checks pass",
-      "required": true
-    },
-    "theme-persists": {
-      "command": "bun run test:e2e --grep theme-persists",
-      "expect": "Dark theme remains selected after restarting the application",
-      "artifacts": ["after-restart.png"]
-    }
-  }
-}
-```
+## Reading the result
 
-Commands run from the directory containing `verify.json`, using the system shell. They should finish after making their assertions. The project's test runner or driver owns any application startup and cleanup. Use `required` for checks the project requires on every change; choose other checks according to the task.
+- **Passed (`0`):** selected checks, planned coverage, and required evidence are complete.
+- **Failed (`1`):** an assertion, observation, or measurement failed; inspect the retained result.
+- **Inconclusive (`2`):** setup, evidence, coverage, comparison, or source freshness is incomplete.
 
-Each command receives **`VERIFY_ARTIFACTS`**, an absolute path to a fresh evidence directory. A driver writes its screenshots, traces, or response captures there. Declare files that must exist in `artifacts`; paths are relative to that directory. Expected evidence must be nonempty. The agent still inspects images and traces before drawing conclusions from them.
+Individual requirements are **verified**, **failed**, or **unverified**. A passing check supports the assertions it actually makes; attaching a requirement label or an evidence file does not establish arbitrary intent. The agent inspects observations and closes the task against its original requirements.
 
-The CLI streams output, saves logs, and records the command, expectation, exit code, duration, Git revision, and local-change fingerprint. Each run has its own `result.json`. `groundwork view report` also identifies omitted checks, changed source, and missing or altered evidence.
-
-### Reading the result
-
-- **Passed:** the selected commands succeeded and their declared evidence was captured.
-- **Failed:** a command returned a failure; inspect its log to distinguish a broken expectation from a setup problem.
-- **Inconclusive:** verification is incomplete, source has changed, or evidence is unavailable.
-
-Exit codes are `0`, `1`, and `2`, respectively. Drivers can exit `2` when setup or an observation is unavailable. A successful run supports the assertions those commands actually make. The agent's task handoff also covers requirement coverage, code review, and any manual observations.
-
-Source matching covers Git revision, local tracked changes, and non-ignored untracked files within the project directory. Record relevant environment, external-service, and ignored-file assumptions in the scenario. Run the application check again when those inputs change.
+Runs retain logs, trials, measurements, and artifacts under `.verify/runs/`. `groundwork view report` rechecks source freshness and saved evidence without rerunning commands. Record relevant fixtures, services, and workload assumptions as non-secret context, and rerun when those inputs change.
 
 ## Refine it through use
 
