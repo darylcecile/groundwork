@@ -9,9 +9,9 @@
   },
   "behaviours": {
     "adoption": {
-      "description": "Adopt projects and install the shared workflow without replacing user setup",
-      "paths": ["skills/verify-work/**", "package.json", "test/verify.test.mjs"],
-      "entry": "groundwork init / groundwork install",
+      "description": "Adopt projects and install or update bundled skills while preserving user setup",
+      "paths": ["skills/**", "lib/distribution.mjs", "package.json", "test/verify.test.mjs", "test/distribution.test.mjs", "test/package.test.mjs"],
+      "entry": "groundwork init / groundwork install / groundwork update",
       "guide": "VERIFY.md#adopt-a-project"
     },
     "coverage": {

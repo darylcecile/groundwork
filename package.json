@@ -2,6 +2,10 @@
   "name": "@darylcecile/groundwork",
   "version": "0.1.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/darylcecile/groundwork.git"
+  },
   "type": "module",
   "bin": {
     "groundwork": "skills/verify-work/verify.mjs"

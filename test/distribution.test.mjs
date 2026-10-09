@@ -1,8 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,25 +125,42 @@ test("update uses a linked checkout's current skills and preserves local work", 
 });
 
 async function gitServer(value) {
-  const socket = createServer();
-  socket.listen(0, "127.0.0.1");
-  await once(socket, "listening");
-  const port = socket.address().port;
-  await new Promise(resolve => socket.close(resolve));
-  const daemon = spawn("git", ["daemon", "--reuseaddr", "--export-all", "--verbose", "--listen=127.0.0.1", `--port=${port}`, `--base-path=${value.root}`], {
-    cwd: value.root, env: value.env, stdio: ["ignore", "ignore", "pipe"],
+  const http = join(value.root, "http");
+  const bare = join(http, "groundwork.git");
+  mkdirSync(http);
+  value.run("git", ["clone", "--bare", join(value.root, "source"), bare]);
+  value.run("git", ["--git-dir", bare, "update-server-info"]);
+  const script = join(value.root, "git-server.mjs");
+  write(script, `import {resolve,sep} from "node:path";
+const root=process.argv[2];
+const server=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(request){
+  const path=resolve(root,"."+decodeURIComponent(new URL(request.url).pathname));
+  if(!path.startsWith(root+sep)) return new Response("Not found",{status:404});
+  const file=Bun.file(path);
+  return await file.exists()?new Response(file,{headers:{"content-type":"application/octet-stream"}}):new Response("Not found",{status:404});
+}});
+console.log(server.port);
+`);
+  const daemon = spawn(process.execPath, [script, http], {
+    cwd: value.root, env: value.env, stdio: ["ignore", "pipe", "pipe"],
   });
-  await new Promise((resolve, reject) => {
+  const port = await new Promise((resolve, reject) => {
     let output = "";
     const timeout = setTimeout(() => { daemon.kill(); reject(new Error(`Git server did not start: ${output}`)); }, 5000);
     daemon.once("error", error => { clearTimeout(timeout); reject(error); });
     daemon.once("exit", code => { clearTimeout(timeout); reject(new Error(`Git server exited ${code}: ${output}`)); });
-    daemon.stderr.on("data", chunk => {
+    daemon.stderr.on("data", chunk => { output += chunk; });
+    daemon.stdout.on("data", chunk => {
       output += chunk;
-      if (output.includes("Ready to rumble")) { clearTimeout(timeout); resolve(); }
+      const value = Number(output.trim());
+      if (Number.isInteger(value) && value > 0) { clearTimeout(timeout); resolve(value); }
     });
   });
-  return { url: `git://127.0.0.1:${port}/source`, async close() {
+  const url = `http://127.0.0.1:${port}/groundwork.git`;
+  return { url, spec: `git+${url}#main`, refresh() {
+    value.run("git", ["push", bare, "main"], join(value.root, "source"));
+    value.run("git", ["--git-dir", bare, "update-server-info"]);
+  }, unavailable() { renameSync(bare, `${bare}.unavailable`); }, async close() {
     if (daemon.exitCode !== null || daemon.signalCode !== null) return;
     const closed = once(daemon, "close");
     daemon.kill();
@@ -164,31 +180,45 @@ test("a Git package update fetches new skills and runs the updated installer, wh
   commit("Initial package");
   const server = await gitServer(value);
   try {
+    const metadata = JSON.parse(readFileSync(join(source, "package.json"), "utf8"));
+    metadata.repository = { type: "git", url: `git+${server.url}` };
+    write(join(source, "package.json"), JSON.stringify(metadata));
+    commit("Configure the package update repository");
+    server.refresh();
     expect(value.run(process.execPath, ["pm", "bin", "--global"])).toBe(value.env.BUN_INSTALL_BIN);
-    value.run(process.execPath, ["add", "--global", `${server.url}#main`]);
+    value.run(process.execPath, ["add", "--global", server.spec]);
     const executable = join(value.env.BUN_INSTALL_BIN, "groundwork");
     value.run(executable, ["install"]);
     expect(existsSync(installedSkill(value.home, "new-work"))).toBe(false);
     skill(source, "new-work");
-    write(cli(source), readFileSync(cli(source), "utf8").replace(
-      "const skills = installSkills(packageRoot);",
-      'writeFileSync(join(home, "updated-installer.txt"), "updated installer ran");\n  const skills = installSkills(packageRoot);',
-    ));
+    const updatedEntry = join(source, "bin/groundwork.mjs");
+    write(updatedEntry, `#!/usr/bin/env bun
+import {writeFileSync} from "node:fs";
+if(process.argv[2]==="install") writeFileSync(process.env.HOME+"/updated-installer.txt","updated installer ran");
+await import("../skills/verify-work/verify.mjs");
+`);
+    chmodSync(updatedEntry, 0o755);
+    metadata.bin.groundwork = "bin/groundwork.mjs";
+    metadata.files.push("bin");
+    write(join(source, "package.json"), JSON.stringify(metadata));
     commit("Add another skill without changing the package version");
+    server.refresh();
     const consumer = join(value.root, "consumer");
     write(join(consumer, "package.json"), '{"name":"consumer","dependencies":{}}\n');
     const consumerBefore = readFileSync(join(consumer, "package.json"), "utf8");
-    value.run(executable, ["update"], consumer);
+    const updateOutput = value.run(executable, ["update"], consumer);
+    if (!existsSync(join(value.home, "updated-installer.txt"))) throw new Error(`The updated installer did not run:\n${updateOutput}`);
     expect(readFileSync(join(value.home, "updated-installer.txt"), "utf8")).toBe("updated installer ran");
     expect(readFileSync(join(installedSkill(value.home, "new-work"), "SKILL.md"), "utf8")).toContain("name: new-work");
     expect(readFileSync(join(consumer, "package.json"), "utf8")).toBe(consumerBefore);
     const installed = join(value.env.BUN_INSTALL_GLOBAL_DIR, "node_modules/@darylcecile/groundwork");
     skill(installed, "not-registered");
-    renameSync(join(source, ".git"), join(source, "unavailable-git"));
+    server.unavailable();
     const failed = value.command(executable, ["update"], consumer);
     expect(failed.code).toBe(2);
-    expect(failed.output).toContain("Package update failed");
+    expect(failed.output).toContain("Package update lookup failed");
     expect(existsSync(installedSkill(value.home, "not-registered"))).toBe(false);
+    expect(value.run(executable, ["--help"])).toContain("groundwork update");
   } finally {
     await server.close();
   }

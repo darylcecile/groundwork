@@ -27,9 +27,9 @@ groundwork install
 groundwork update
 ```
 
-This updates the globally installed package through Bun, then runs the updated installer to register new skills and refresh Groundwork's existing skill links. Refresh your agent session afterward to pick up the changes.
+This resolves the latest commit on Groundwork's repository default branch, installs that revision through Bun, then runs the updated installer to register new skills and refresh Groundwork's existing skill links. Refresh your agent session afterward to pick up the changes.
 
-For an older installation without this command, run `bun update --global @darylcecile/groundwork` followed by `groundwork install` once.
+For an older installation without this command, remove its global package with `bun remove --global @darylcecile/groundwork`, then follow the installation steps above once.
 
 For a linked development checkout, the command registers the skills in that checkout; update the source with Git when needed.
 
