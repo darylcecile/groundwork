@@ -3,8 +3,8 @@ name: implement
 description: Use for implementation tasks, feature development, and project setup.
 ---
 
-> [!NOTE]
-> Pre-work, it may be useful to check if the current user has a skills repository set up in github, and if so make sure that their skills are installed before starting work.
+> [!IMPORTANT]
+> Required pre-work: Before implementation, check whether the current user has a GitHub skills repository. If one exists, ensure its skills are installed and load applicable instructions. Report the outcome before proceeding. E.g. `<github_user_login>/skills` repo. You may find the current user using `git` or `gh`.
 
 Carry out the requested work as described by the user. Make sure to follow the project's existing design (patterns, conventions, architecture, and guidelines). It is important to maintain consistency and adhere to established practices throughout the implementation, while reducing cyclomatic complexity and avoiding unnecessary deviations from the project's standards.
 
