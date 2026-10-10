@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       checks:
-        description: Project verification commands; when omitted use the project's verify.json
+        description: Project verification commands; when omitted use the project's .groundwork/verify.json
         default: ''
         type: string
       plan:

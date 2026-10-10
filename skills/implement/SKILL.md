@@ -10,7 +10,9 @@ Carry out the requested work as described by the user. Make sure to follow the p
 
 If the user has provided an issue or reference, make sure to review it thoroughly to understand the context, requirements, and any constraints before starting the implementation. If the provided source is ambiguous or incomplete, seek clarification from the user before proceeding.
 
-Create a `.agent-tmp/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
+Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
+
+Keep Groundwork-owned project files inside `.groundwork/`: reusable helpers in `scripts/`, supporting tool configs in `config/`, plans in `plans/`, and scratch files in `tmp/`. Reuse existing project tools. Keep root `AGENTS.md` as the discoverable entry point to `.groundwork/VERIFY.md` and `.groundwork/verify.json`; use a tool's required discovery path when it cannot load an explicitly located config. Run commands from the project root and pass helper/config paths explicitly. Commit reusable files; keep task notes, plans, scratch files and run evidence ignored through `.groundwork/.gitignore`.
 
 As you form an understanding of the task, continuously update the task files with your findings, decisions, and any clarifications obtained from the user. This ensures that all relevant information is captured and can be referenced throughout the implementation process, even if a context compacting occurs.
 
@@ -52,7 +54,7 @@ Additionally, regularly review the decisions and context sections to ensure that
 
 Order of operation:
 - Review the issue or reference provided by the user.
-- Create a task files in `.agent-tmp/tasks/` with the appropriate priority, model, and name.
+- Create a task file in `.groundwork/tasks/` with the appropriate priority, model, and name.
 - Continuously update the task files with context, decisions, and progress.
 - Once you are confident that the task files are correctly set up, use Groundwork to prepare the tasks for implementation; defining real objectives, goals, and journeys based on the context of the task files themselves.
 - For each task, spin up the necessary subagent (based on model specified in the task), and assign it to handle the implementation according to the prepared objectives, goals, and journeys.
@@ -64,5 +66,4 @@ Order of operation:
   - Revisions should be addressed before the task can be considered complete and verified.
   - The judge should check that the definition of done has been met before approving the task as complete.
 - Delete the task file once the task is fully completed and verified; and the task meets definition of done. Then make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.
-- Once all tasks are completed and verified - with evidence documented with groundwork, delete the folder `.agent-tmp/tasks/`.
-
+- Once all tasks are completed and verified - with evidence documented with groundwork, delete the folder `.groundwork/tasks/` when empty.

@@ -1,13 +1,16 @@
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync,
+import { randomUUID } from "node:crypto";
+import { appendFileSync, cpSync, mkdirSync, readFileSync,
   readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { catalogue, catalogueIssues, loadConfig, parseConfig, selectChecks } from "../../lib/config.mjs";
+import { catalogue, catalogueIssues, configPath, loadConfig, parseConfig, selectChecks } from "../../lib/config.mjs";
+import { groundworkPath, pathExists } from "../../lib/layout.mjs";
 import { assess, ensure, readJSON, refreshEvidence, safePath, validatePlan, withInvariants, within, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, executeCommand, git, runChecks, source } from "../../lib/runner.mjs";
 import { inspectAgent, verdict } from "./report.mjs";
 
 const repository = resolve(process.env.PR_VERIFY_REPOSITORY || process.cwd());
-const output = resolve(process.env.PR_VERIFY_OUTPUT || "../pr-verification-results");
+const projectDirectory = resolve(repository, process.env.PR_VERIFY_DIRECTORY || ".");
+const output = resolve(process.env.PR_VERIFY_OUTPUT || groundworkPath(projectDirectory, "runs", `pr-${randomUUID()}`));
 let initialized = false;
 const pending = log => ({ status: "inconclusive", exitCode: null, durationMs: 0, log });
 const result = {
@@ -38,10 +41,14 @@ async function agent(phase, prompt, cwd) {
 }
 
 try {
+  const cwd = within(repository, projectDirectory);
   mkdirSync(output, { recursive: true });
   const actualOutput = realpathSync(output);
   const actualRepository = realpathSync(repository);
-  ensure(actualOutput !== actualRepository && !actualOutput.startsWith(`${actualRepository}${sep}`), "Keep the evidence directory outside the repository checkout.");
+  const localRuns = groundworkPath(cwd, "runs");
+  const outsideRepository = actualOutput !== actualRepository && !actualOutput.startsWith(`${actualRepository}${sep}`);
+  ensure(outsideRepository || actualOutput.startsWith(`${localRuns}${sep}`),
+    "Keep evidence in a fresh .groundwork/runs/ subdirectory or outside the repository checkout.");
   ensure(readdirSync(output).length === 0, "Use an empty evidence directory for each verification run.");
   initialized = true;
   mkdirSync(join(output, "agent"));
@@ -52,10 +59,9 @@ try {
   result.pullRequest = pull.number;
   result.headSha = pull.head.sha;
   ensure(pull.head.repo?.full_name === result.repository, "This version verifies PR branches within the importing repository.");
-  const cwd = within(repository, resolve(repository, process.env.PR_VERIFY_DIRECTORY || "."));
   const commands = { setup: process.env.PR_VERIFY_SETUP || "", checks: process.env.PR_VERIFY_CHECKS || "" };
-  const config = existsSync(join(cwd, "verify.json")) ? loadConfig(cwd) : parseConfig({ checks: {} });
-  ensure(commands.checks.trim() || Object.keys(config.checks).length, "Provide checks or configure project checks in verify.json.");
+  const config = pathExists(configPath(cwd)) ? loadConfig(cwd) : parseConfig({ checks: {} });
+  ensure(commands.checks.trim() || Object.keys(config.checks).length, "Provide checks or configure project checks in .groundwork/verify.json.");
   const artifacts = (process.env.PR_VERIFY_ARTIFACTS || "").split(/\r?\n/).map(path => path.trim().replace(/\/+$/, "")).filter(Boolean);
   ensure(artifacts.every(safePath), "Artifact paths must name files or directories within the project; globs and parent paths are not supported.");
   const excluded = artifacts.map(path => relative(repository, resolve(cwd, path)));
@@ -142,6 +148,8 @@ try {
   for (const path of artifacts) {
     try {
       const source = within(cwd, resolve(cwd, path));
+      ensure(source !== actualOutput && !actualOutput.startsWith(`${source}${sep}`) && !source.startsWith(`${actualOutput}${sep}`),
+        "Artifact path overlaps the evidence directory.");
       cpSync(source, join(output, "project", path), {
         recursive: true, dereference: true,
         filter: file => { within(cwd, file); return true; },

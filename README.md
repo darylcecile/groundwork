@@ -39,14 +39,41 @@ Open the project in Copilot or OpenCode and say:
 
 > Use verify-work to set this project up. Reuse its existing tools and start with one real user journey. Then help me make a small change and show evidence that it works.
 
-The agent runs `groundwork init` and fills in two project files:
+The agent runs `groundwork init` and fills in two files under `.groundwork/`:
 
-- **`VERIFY.md`:** the behaviour guide—how to run the project, reach the feature, and observe the expected result.
-- **`verify.json`:** named checks, with optional behaviour mappings and enforced project invariants.
+- **`.groundwork/VERIFY.md`:** the behaviour guide—how to run the project, reach the feature, and observe the expected result.
+- **`.groundwork/verify.json`:** named checks, with optional behaviour mappings and enforced project invariants.
 
-Commit those files with the project when ready. Existing check configurations remain valid; add catalogue entries and richer drivers as they become useful.
+Root **`AGENTS.md`** points agents to these files. Commit the guide, configuration and `.groundwork/.gitignore` with the project when ready. Existing check configurations remain valid; add catalogue entries and richer drivers as they become useful.
 
-For multi-part changes, the agent saves a verification plan, reuses the project's checks and relevant [playbooks](skills/verify-work/playbooks.md), and closes every requirement or explains its gap. Straightforward tasks can track their outcomes in the conversation. Plans such as `.verify/plan.json` and run evidence stay in the ignored `.verify/` directory. Continue giving the agent tasks normally.
+For multi-part changes, the agent saves a verification plan, reuses the project's checks and relevant [playbooks](skills/verify-work/playbooks.md), and closes every requirement or explains its gap. Straightforward tasks can track their outcomes in the conversation. Continue giving the agent tasks normally.
+
+### Project layout
+
+```text
+AGENTS.md                     Agent-discoverable workflow reference
+.groundwork/
+  VERIFY.md                   Behaviour guide
+  verify.json                 Checks, behaviours and invariants
+  .gitignore                  Ignore only local working files and evidence
+  scripts/                    Reusable Groundwork-owned drivers and helpers
+  config/                     Supporting tool configs, loaded explicitly
+  plans/                      Local task plans (ignored)
+  tasks/                      Local implementation notes (ignored)
+  tmp/                        Scratch files (ignored)
+  runs/                       Retained run evidence (ignored)
+  latest                      Latest CLI run identifier (ignored)
+```
+
+Create supporting directories only when needed. Reuse existing project tools; new Groundwork-owned helpers and configs belong here. Commands still run from the project root, and check path patterns and catalogue guide references are project-root-relative. Tools with mandatory discovery locations, such as [GitHub Actions' `.github/workflows/`](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows), retain those locations.
+
+Keep `.groundwork/` itself tracked: changes to its guide, checks, scripts and configs must participate in source freshness and change-aware selection. Its own `.gitignore` handles generated output without changing the project's root ignore file.
+
+### Existing projects
+
+Run `groundwork init` again to move legacy root `verify.json`, `VERIFY.md` and `.verify/` contents into `.groundwork/`. It preserves existing content, updates catalogue references to the moved guide and refreshes the generated `AGENTS.md` instruction. Conflicting destinations, including names differing only in case or Unicode normalization, stop migration before files are moved. A legacy `.verify/.gitignore` is preserved as the inactive `.groundwork/legacy-verify.gitignore`, so old runtime ignore rules cannot hide reusable inputs. Review custom Markdown links in a moved guide and any references to old paths when relocating your own helper scripts.
+
+The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root configuration supported when that file is absent. New runs always use `.groundwork/runs/`; the CLI can still read legacy evidence until a new run is started or it is migrated. Rerun verification after migration because the source paths have changed.
 
 ## Commands
 
@@ -56,8 +83,8 @@ The agent uses these as needed:
 groundwork init                              # Adopt the current project
 groundwork view guide theme                  # Discover related behaviours and checks
 groundwork verify                            # Run every configured check
-groundwork verify theme-persists --plan .verify/plan.json
-groundwork verify --changed main --plan .verify/plan.json
+groundwork verify theme-persists --plan .groundwork/plans/task.json
+groundwork verify --changed main --plan .groundwork/plans/task.json
 groundwork view report                       # Inspect the latest result and evidence
 ```
 
@@ -73,7 +100,7 @@ See the [verification reference](skills/verify-work/references/verification.md) 
 
 Individual requirements are **verified**, **failed**, or **unverified**. A passing check supports the assertions it actually makes; attaching a requirement label or an evidence file does not establish arbitrary intent. The agent inspects observations and closes the task against its original requirements.
 
-Runs retain logs, trials, measurements, and artifacts under `.verify/runs/`. `groundwork view report` rechecks source freshness and saved evidence without rerunning commands. Record relevant fixtures, services, and workload assumptions as non-secret context, and rerun when those inputs change.
+Runs retain logs, trials, measurements, and artifacts under `.groundwork/runs/`. `groundwork view report` rechecks source freshness and saved evidence without rerunning commands. Record relevant fixtures, services, and workload assumptions as non-secret context, and rerun when those inputs change.
 
 ## Refine it through use
 

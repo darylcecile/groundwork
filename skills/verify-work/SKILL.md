@@ -11,11 +11,11 @@ Use the relevant sections of [playbooks.md](playbooks.md) to choose verification
 
 ## During ordinary work
 
-1. Read the request, project instructions, relevant code, callers, and tests. If present, read `VERIFY.md` and `verify.json`; use `groundwork view guide` to find relevant behaviours and checks.
-2. Identify the intended outcomes, constraints, and deliverables before editing. Save a plan such as `.verify/plan.json` for multi-part changes or when coverage would otherwise be hard to track. Straightforward tasks can track their outcomes in the conversation. Ask only about uncertainty that materially changes the work.
+1. Read the request, project instructions, relevant code, callers, and tests. If present, read `.groundwork/VERIFY.md` and `.groundwork/verify.json` (legacy projects may still have them at the root); use `groundwork view guide` to find relevant behaviours and checks.
+2. Identify the intended outcomes, constraints, and deliverables before editing. Save a plan such as `.groundwork/plans/task.json` for multi-part changes or when coverage would otherwise be hard to track. Straightforward tasks can track their outcomes in the conversation. Ask only about uncertainty that materially changes the work.
 3. Choose relevant playbook cases and establish how to exercise the behaviour. Reproduce a reported bug when feasible, using the actual UI, API, or CLI entry point. A source-aware regression driver can later use `--base <ref>` to exercise both revisions.
 4. Make the smallest suitable change using existing patterns. Finish a coherent implementation batch before running checks. Keep working through relevant failures and report material blockers promptly.
-5. When `verify.json` exists, run relevant checks with `groundwork verify`; add `--plan` when using a saved plan. Otherwise run the project's existing verification commands directly. Reuse coverage and add a regression test only for a realistic failure the current tests miss.
+5. When `.groundwork/verify.json` or a legacy root `verify.json` exists, run relevant checks with `groundwork verify`; add `--plan` when using a saved plan. Otherwise run the project's existing verification commands directly. Reuse coverage and add a regression test only for a realistic failure the current tests miss.
 6. Inspect the actual observations and saved evidence. For UI changes, view the rendered result and exercise the interaction; compare against supplied references at relevant viewports. If the required observation is unavailable, leave that acceptance condition unverified and explain the gap.
 7. Review the complete diff for intended behaviour, missed requirements, fit with the existing design, unnecessary complexity, and unrelated changes. Fix concrete issues. After further source changes, rerun affected checks. Stop once the outcome and required checks are satisfied.
 8. Close every original requirement with its result and evidence, or state its remaining gap. Finish with the requested delivery state. For PR work, include relevant outstanding review feedback, base/conflict status, and whether changes were pushed, according to the user's instructions.
@@ -25,9 +25,9 @@ Report each outcome as **verified**, **failed**, or **unverified**, with support
 ## When asked to adopt Groundwork in a project
 
 1. Inspect existing instructions, setup commands, CI, tests, and application-control tools.
-2. Run `groundwork init` from the intended project root. This preserves existing files. Fill in `VERIFY.md` and `verify.json` using what the project actually supports.
+2. Run `groundwork init` from the intended project root. This preserves existing content and migrates known legacy Groundwork files without overwriting collisions. Fill in `.groundwork/VERIFY.md` and `.groundwork/verify.json` using what the project actually supports. Root `AGENTS.md` points agents to them.
 3. Start with one real feature or reported bug. Record its entry point, starting state, actions, expected result, implementation location, check, and evidence. Add catalogue entries and path mappings incrementally.
-4. Reuse existing drivers and test runners. If the real interaction cannot yet be exercised, build the smallest project-owned driver needed for that journey. Keep application-specific setup, navigation, and assertions there.
+4. Reuse existing drivers and test runners. If the real interaction cannot yet be exercised, build the smallest project-owned driver needed for that journey under `.groundwork/scripts/`. Keep application-specific setup, navigation, and assertions there. Put new Groundwork-specific tool configs in `.groundwork/config/` and pass their paths explicitly; use a tool's required discovery path only when it cannot load an explicitly located config.
 5. Use `required: true` for checks needed on every change. Record project invariants with their enforcing checks and path scope. Add lifecycle commands, structured results, or measurements when useful.
 6. Run the selected scenario and required checks. Fix setup problems and inspect the evidence. Leave genuine environment blockers explicit. Keep the behaviour guide limited to the behaviours currently needed and maintain it as they change.
 
@@ -47,7 +47,9 @@ groundwork view report           Inspect coverage, results, and freshness
 
 Groundwork adds required checks and active invariants. Use `--changed` to select mapped areas, and inspect unmapped changes for additional verification needs. Without names or `--changed`, it runs all configured checks.
 
-The CLI stores each run under `.verify/runs/<id>/`, including the plan, results, logs, and trial artifacts. A new run becomes the latest immediately, so an interrupted attempt remains incomplete. `groundwork view report` rechecks source and evidence without rerunning commands.
+The CLI stores each run under `.groundwork/runs/<id>/`, including the plan, results, logs, and trial artifacts. A new run becomes the latest immediately, so an interrupted attempt remains incomplete. `groundwork view report` rechecks source and evidence without rerunning commands.
+
+Keep all Groundwork-owned project files in `.groundwork/`, including task notes in `tasks/` and scratch files in `tmp/`. Its `.gitignore` ignores runtime output, plans and task notes, while the guide, check configuration, reusable scripts and supporting configs remain version-controlled. Commands, check path patterns and catalogue guide references are relative to the project root, not `.groundwork/`.
 
 CLI exit codes are `0` for passed, `1` for failed, and `2` for inconclusive. Diagnose failures from their logs and evidence; keep missing requirements and unavailable observations visible.
 

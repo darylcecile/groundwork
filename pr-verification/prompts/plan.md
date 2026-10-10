@@ -2,6 +2,8 @@
 
 Read the supplied PR context, project instructions, relevant diff, behaviour guide, catalogue, and existing checks. Produce a verification plan before the checks and behaviour-verification pass run.
 
+Groundwork's project guide and check configuration are `.groundwork/VERIFY.md` and `.groundwork/verify.json`; legacy projects may still have them at the root. Root `AGENTS.md` remains the instruction entry point.
+
 Identify the requested outcomes and important behaviour the change promises to preserve. Keep each requirement specific enough to observe. Use stable lowercase IDs. Select relevant cases from the available project tools and the verification playbooks; keep roles, policy, and budgets grounded in the project and request.
 
 Write the designated plan file as JSON:

@@ -6,7 +6,7 @@ The workflow runs and comments in the **repository that imports it**. This first
 
 ## Use in a repository
 
-Add this caller workflow as `.github/workflows/verify.yml` in a project:
+Add this caller workflow as `.github/workflows/verify.yml` in a project. [GitHub Actions requires that discovery location](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows); Groundwork's project configuration and helpers live under `.groundwork/`:
 
 ```yaml
 name: Final verification
@@ -46,7 +46,7 @@ GitHub supports sharing this private personal repository's workflow with other p
 
 ### Inputs
 
-- **`checks`** — shell commands for existing project verification. A failed command stops this block and remains a failure in the final result. When omitted, the workflow uses the project's `verify.json` catalogue to select checks for the changed areas.
+- **`checks`** — shell commands for existing project verification. A failed command stops this block and remains a failure in the final result. When omitted, the workflow uses the project's `.groundwork/verify.json` catalogue to select checks for the changed areas, falling back to a legacy root `verify.json`.
 - **`plan`** — optional project-relative JSON plan. Otherwise the agent prepares a plan from the PR, project guidance, and available checks before verification begins.
 - **`compare-base`** — opt into running source-aware, comparison-enabled drivers against the PR base. Defaults to `false`.
 - **`setup`** — optional commands to install dependencies and prepare the project.
@@ -55,6 +55,8 @@ GitHub supports sharing this private personal repository's workflow with other p
 - **`verifier-ref`** — Groundwork's ref; defaults to `main`. When pinning the workflow to a tag or SHA, set this input to the same ref so its helper code matches.
 
 Commands run in Bash on an Ubuntu GitHub-hosted runner. Bun and Copilot CLI are installed by the workflow; use `setup` to prepare other toolchains or project dependencies. Setup/check commands should finish; let the test runner or agent manage application startup and cleanup. Commands and the agent receive **`PR_VERIFY_OUTPUT`**, an absolute evidence directory outside the source checkout. The whole job has a 30-minute limit.
+
+For local invocation, the runner defaults to a fresh `.groundwork/runs/pr-<id>/` directory within the selected project, including when `PR_VERIFY_DIRECTORY` selects a nested project. Set `PR_VERIFY_OUTPUT` to use another fresh directory under that project's `.groundwork/runs/` or outside the checkout. The hosted workflow explicitly uses runner temporary storage for its uploaded evidence bundle.
 
 ## What it verifies
 

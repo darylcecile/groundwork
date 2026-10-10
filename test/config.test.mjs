@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { catalogue, catalogueIssues, loadConfig, parseConfig, selectChecks } from "../lib/config.mjs";
+import { catalogue, catalogueIssues, configPath, loadConfig, parseConfig, selectChecks } from "../lib/config.mjs";
 
 const directories = [];
 
@@ -22,7 +22,7 @@ function write(root, path, content) {
 }
 
 function check(options = {}) {
-  return { command: "bun scenario.mjs", expect: "The requested behaviour holds", ...options };
+  return { command: "bun .groundwork/scripts/scenario.mjs", expect: "The requested behaviour holds", ...options };
 }
 
 test("legacy checks remain conservative for changed files and selective for named runs", () => {
@@ -116,7 +116,7 @@ test("catalogue searches descriptions, IDs, paths, and entry points and merges i
       storage: check(),
     },
     behaviours: {
-      "save-document": { description: "Preserve draft contents", paths: ["src/editor/**"], entry: "/workspace", guide: "VERIFY.md#saving" },
+      "save-document": { description: "Preserve draft contents", paths: ["src/editor/**"], entry: "/workspace", guide: ".groundwork/VERIFY.md#saving" },
       importing: { description: "Import an existing file" },
     },
     invariants: { durable: { description: "Saved changes survive restart", checks: ["journey", "storage"] } },
@@ -124,7 +124,7 @@ test("catalogue searches descriptions, IDs, paths, and entry points and merges i
   for (const query of ["SAVE-DOCUMENT", "DRAFT", "SRC/EDITOR", "/WORKSPACE"]) {
     const rows = catalogue(config, query);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: "save-document", type: "behaviour", checks: ["journey"], guide: "VERIFY.md#saving" });
+    expect(rows[0]).toMatchObject({ id: "save-document", type: "behaviour", checks: ["journey"], guide: ".groundwork/VERIFY.md#saving" });
   }
   expect(catalogue(config, "durable")[0]).toMatchObject({ type: "invariant", checks: ["journey", "storage"] });
   expect(catalogue(config, "import")[0].checks).toEqual([]);
@@ -174,7 +174,7 @@ test("guide references cannot escape the project through a symbolic link", () =>
 
 test("loading validates persisted JSON and preserves declared measurement context", () => {
   const root = temporaryDirectory();
-  write(root, "verify.json", JSON.stringify({
+  write(root, ".groundwork/verify.json", JSON.stringify({
     context: { fixture: "small", workers: 2, remote: false, revision: null },
     checks: { timing: check({
       kind: "performance", setup: "bun seed.mjs", cleanup: "bun reset.mjs", repeat: 3,
@@ -188,10 +188,34 @@ test("loading validates persisted JSON and preserves declared measurement contex
   expect(config.checks.timing.context).toEqual({ fixture: "large" });
   expect(parseConfig(config)).toEqual(config);
   expect(selectChecks(config, { changedPaths: ["benchmark.mjs"] }).names).toEqual(["timing"]);
-  write(root, "verify.json", "{not json}");
+  write(root, ".groundwork/verify.json", "{not json}");
   expect(() => loadConfig(root)).toThrow("verify.json");
-  write(root, "verify.json", JSON.stringify({ checks: { timing: check({ repeat: "3" }) } }));
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: { timing: check({ repeat: "3" }) } }));
   expect(() => loadConfig(root)).toThrow("repeat must be a positive safe integer");
+});
+
+test("namespaced configuration takes precedence over legacy fallback and keeps paths project-root-relative", () => {
+  const root = temporaryDirectory();
+  expect(configPath(root)).toBe(join(root, ".groundwork/verify.json"));
+  write(root, "verify.json", JSON.stringify({ checks: { legacy: check() } }));
+  expect(configPath(root)).toBe(join(root, "verify.json"));
+  expect(Object.keys(loadConfig(root).checks)).toEqual(["legacy"]);
+  write(root, ".groundwork/VERIFY.md", "# Saving\n");
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: { current: check({ paths: [".groundwork/scripts/**"], covers: ["saving"] }) },
+    behaviours: { saving: { description: "Save a file", paths: ["src/**"], guide: ".groundwork/VERIFY.md#saving" } } }));
+  expect(configPath(root)).toBe(join(root, ".groundwork/verify.json"));
+  const config = loadConfig(root);
+  expect(Object.keys(config.checks)).toEqual(["current"]);
+  expect(config.checks.current.command).toBe("bun .groundwork/scripts/scenario.mjs");
+  expect(selectChecks(config, { changedPaths: [".groundwork/scripts/scenario.mjs"] }).names).toEqual(["current"]);
+  expect(selectChecks(config, { changedPaths: ["src/main.mjs"] }).names).toEqual(["current"]);
+  expect(catalogueIssues(config, root)).toEqual([]);
+  write(root, ".groundwork/verify.json", "{invalid}");
+  expect(() => loadConfig(root)).toThrow(".groundwork/verify.json");
+  rmSync(join(root, ".groundwork/verify.json"));
+  symlinkSync(join(root, "missing.json"), join(root, ".groundwork/verify.json"));
+  expect(configPath(root)).toBe(join(root, ".groundwork/verify.json"));
+  expect(() => loadConfig(root)).toThrow(".groundwork/verify.json");
 });
 
 test("invalid configuration boundaries, fields, and references are rejected", () => {

@@ -43,7 +43,7 @@ Choose evidence proportional to the actual change. Reuse existing coverage. Add 
 
 ## The project contribution
 
-Each adopted project supplies a small behaviour guide in `VERIFY.md` and repeatable checks in `verify.json`. Start with one journey:
+Each adopted project supplies a small behaviour guide in `.groundwork/VERIFY.md` and repeatable checks in `.groundwork/verify.json`, linked from root `AGENTS.md`. Start with one journey:
 
 1. What does this feature do, and where is its implementation?
 2. What starting state and running services does it need?
@@ -51,13 +51,13 @@ Each adopted project supplies a small behaviour guide in `VERIFY.md` and repeata
 4. What must happen?
 5. Which command or direct observation checks that, and where is the evidence?
 
-Reuse the project's existing browser tooling, test runner, API client, and development commands. When a recurring interaction needs automation, make one small project-owned driver. Update the behaviour guide when the feature's entry point or behaviour changes.
+Reuse the project's existing browser tooling, test runner, API client, and development commands. When a recurring interaction needs automation, make one small project-owned driver under `.groundwork/scripts/`; put its supporting configs in `.groundwork/config/`. Keep task plans, notes, scratch files and evidence under `.groundwork/` as well. Update the behaviour guide when the feature's entry point or behaviour changes.
 
 ## The handoff
 
 Keep the final response short, for example:
 
-> Theme selection now survives restart. The persistence scenario and required checks passed; the restarted screen was inspected. Evidence: `.verify/runs/<run>/`. Firefox was not exercised. Changes are local; not pushed.
+> Theme selection now survives restart. The persistence scenario and required checks passed; the restarted screen was inspected. Evidence: `.groundwork/runs/<run>/`. Firefox was not exercised. Changes are local; not pushed.
 
 ## Improving the framework
 

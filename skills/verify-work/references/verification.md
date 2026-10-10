@@ -10,7 +10,7 @@ A plan has a nonempty `goal` and a nonempty `requirements` array. Every requirem
 
 The runner freezes and saves the plan before execution. Active project invariants are added as `invariant:<catalogue-id>` requirements; those IDs are reserved. In the local CLI, a plan describes coverage: select its checks explicitly, through `--changed`, or by running all checks. The PR workflow can also schedule checks bound in its generated plan.
 
-For example, an agent fixing preference persistence saves `.verify/plan.json` before editing:
+For example, an agent fixing preference persistence saves `.groundwork/plans/task.json` before editing:
 
 ```json
 {
@@ -28,9 +28,11 @@ For example, an agent fixing preference persistence saves `.verify/plan.json` be
 
 ## Project configuration
 
-`verify.json` requires a `checks` object. `behaviours`, `invariants`, and `context` are optional objects. Existing configurations containing only `command`, `expect`, `required`, and `artifacts` remain valid. Unknown fields and invalid references are rejected.
+`.groundwork/verify.json` requires a `checks` object. `behaviours`, `invariants`, and `context` are optional objects. Existing configurations containing only `command`, `expect`, `required`, and `artifacts` remain valid. Unknown fields and invalid references are rejected. The CLI and PR runner prefer this path and fall back to a legacy root `verify.json` when it is absent.
 
-Continuing the example, the project supplies the following configuration. Replace the commands with real project checks and create the referenced sections in its `VERIFY.md`.
+Keep Groundwork-owned helpers in `.groundwork/scripts/` and supporting configs in `.groundwork/config/`. Reuse the project's existing tools and pass config paths explicitly where supported. Commands, `paths` and catalogue `guide` references remain relative to the project root. Markdown links inside the guide are relative to the guide file.
+
+Continuing the example, the project supplies the following configuration. Replace the commands with real project checks and create the referenced sections in its `.groundwork/VERIFY.md`.
 
 ```json
 {
@@ -43,10 +45,10 @@ Continuing the example, the project supplies the following configuration. Replac
       "paths": ["test/settings.test.mjs"]
     },
     "theme-persists": {
-      "command": "bun verify/theme.mjs",
+      "command": "bun .groundwork/scripts/theme.mjs",
       "expect": "Dark theme survives a fresh application process",
       "kind": "workflow",
-      "paths": ["verify/theme.mjs"],
+      "paths": [".groundwork/scripts/theme.mjs"],
       "covers": ["theme-persistence"],
       "artifacts": ["after-restart.json"],
       "result": "result.json",
@@ -59,7 +61,7 @@ Continuing the example, the project supplies the following configuration. Replac
       "description": "Theme selection survives restarting the application",
       "paths": ["src/preferences/**"],
       "entry": "Preferences CLI: set a theme, then read it in a new process",
-      "guide": "VERIFY.md#theme-persistence"
+      "guide": ".groundwork/VERIFY.md#theme-persistence"
     }
   },
   "invariants": {
@@ -67,7 +69,7 @@ Continuing the example, the project supplies the following configuration. Replac
       "description": "Malformed settings cannot overwrite valid preferences",
       "paths": ["src/preferences/**"],
       "checks": ["settings-contract"],
-      "guide": "VERIFY.md#valid-settings"
+      "guide": ".groundwork/VERIFY.md#valid-settings"
     }
   }
 }
@@ -115,7 +117,7 @@ groundwork verify [name ...] [--plan file] [--changed ref] [--base ref]
 - Unscoped invariants are always active. Scoped invariants are active on matching changes; without `--changed`, all invariants are active, even for a named run. Active invariant checks are always added.
 - Reports retain selection reasons, omitted checks, `unmappedPaths`, and `uncoveredBehaviours`. The last two are planning signals, not evidence of coverage; inspect them against the task's requirements.
 
-For the example, `groundwork verify theme-persists --plan .verify/plan.json` also runs `settings-contract` because its invariant is active. Using `--changed` does not perform a baseline comparison; `--base` is independent.
+For the example, `groundwork verify theme-persists --plan .groundwork/plans/task.json` also runs `settings-contract` because its invariant is active. Using `--changed` does not perform a baseline comparison; `--base` is independent.
 
 ## Driver lifecycle and evidence
 
@@ -131,7 +133,7 @@ Drivers receive:
 - `GROUNDWORK_TRIAL`: the one-based trial number.
 - `GROUNDWORK_PLAN`: path to the saved plan snapshot, or an empty string when there is no plan.
 
-For the example, `verify/theme.mjs` creates isolated preferences under the evidence directory, sets the theme, starts a fresh process, and reads the result. It invokes the application entry under `GROUNDWORK_SOURCE_DIR`, such as `src/preferences/cli.mjs`, and writes the expected and observed values to `after-restart.json`. It then writes the configured `result.json`:
+For the example, `.groundwork/scripts/theme.mjs` creates isolated preferences under the evidence directory, sets the theme, starts a fresh process, and reads the result. It invokes the application entry under `GROUNDWORK_SOURCE_DIR`, such as `src/preferences/cli.mjs`, and writes the expected and observed values to `after-restart.json`. It then writes the configured `result.json`:
 
 ```json
 {
@@ -165,7 +167,7 @@ Exercise commands should exit `0` when assertions pass, `1` for an observed asse
 
 `repeat` runs every configured trial unless interrupted and retains every outcome. A later pass never erases an earlier candidate failure. Use repetition when behaviour varies, rather than as a retry-until-green mechanism.
 
-`groundwork verify theme-persists --plan .verify/plan.json --base <ref>` exercises the example driver against both revisions. At least one selected check must declare `compare`; other checks run against the candidate only.
+`groundwork verify theme-persists --plan .groundwork/plans/task.json --base <ref>` exercises the example driver against both revisions. At least one selected check must declare `compare`; other checks run against the candidate only.
 
 **Both phases execute the candidate's driver command from the candidate project. The driver must target `GROUNDWORK_SOURCE_DIR`.** This lets a newly written regression driver exercise old code. An ordinary command that ignores the target should remain a candidate-only check. Setup and cleanup receive the same target and phase variables.
 
@@ -178,8 +180,8 @@ Inspect baseline logs and observations to confirm the intended failure, and insp
 
 ## Results and freshness
 
-Each run is saved under `.verify/runs/<id>/`, including its `result.json`, plan snapshot when present, logs, and trial artifacts. A new attempt becomes the latest immediately, so an interrupted run cannot reuse an earlier success.
+Each run is saved under `.groundwork/runs/<id>/`, including its `result.json`, plan snapshot when present, logs, and trial artifacts. A new attempt becomes the latest immediately, so an interrupted run cannot reuse an earlier success.
 
-`groundwork view report` rechecks the saved source and evidence without rerunning commands. Source matching includes the Git revision, tracked local changes, and non-ignored untracked files, excluding `.verify/`. Relevant ignored inputs and external services need declared context and a new run when they change.
+`groundwork view report` rechecks the saved source and evidence without rerunning commands. Source matching includes the Git revision, tracked local changes, and non-ignored untracked files. Groundwork's runtime paths (`runs/`, `latest`, `plans/`, `tasks/`, and `tmp/` inside `.groundwork/`) and legacy `.verify/` output are excluded. The guide, check configuration, reusable scripts and supporting configs remain source inputs; editing them invalidates saved results. Relevant ignored inputs and external services need declared context and a new run when they change.
 
 Requirements report **verified**, **failed**, or **unverified**. The overall result is **passed / 0** when checks and required coverage are complete, **failed / 1** when a failure was observed, or **inconclusive / 2** when completion cannot be established. Failures remain visible alongside missing coverage or evidence. Inspect the actual assertions, images, traces, and measurements before closing every requirement or reporting its gap.

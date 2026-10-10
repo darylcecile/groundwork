@@ -24,12 +24,13 @@ Keep the shared code independent of any application's stack. Put application set
 
 - `skills/verify-work/verify.mjs`: CLI, installation, adoption, guide discovery, and saved reports.
 - `lib/config.mjs`: configuration validation, catalogue, and check selection.
+- `lib/layout.mjs`: project-owned paths, runtime exclusions, and legacy-file migration.
 - `lib/model.mjs`: task plans, requirement coverage, observations, evidence, and measurements.
 - `lib/runner.mjs`: setup/exercise/cleanup, trials, and baseline worktrees.
 - `lib/distribution.mjs`: bundled skill discovery, registration, and package updates.
 - `test/` and `pr-verification/test/`: project behaviour and integration checks.
 
-Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and `VERIFY.md` for this repository's journeys. Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement.
+Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/VERIFY.md) for this repository's journeys. Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement.
 
 When changing distribution or skill paths, keep shared modules in the package and skill references inside the skill directory. The installation test exercises an extracted package through its installed skill path.
 
@@ -43,7 +44,7 @@ To run locally, point `GITHUB_EVENT_PATH` at a JSON file containing the target `
 
 - `PR_VERIFY_REPOSITORY`: checkout to verify.
 - `PR_VERIFY_CHECKS`: the project's check commands.
-- `PR_VERIFY_OUTPUT`: a fresh evidence directory outside that checkout.
+- Optionally, `PR_VERIFY_OUTPUT`: a fresh evidence directory. By default each run gets a new `.groundwork/runs/pr-<id>/` directory in the selected project. An explicit directory may be inside that project's `.groundwork/runs/` or outside the checkout.
 
 Then run `bun pr-verification/scripts/verify.mjs`. Local runs use the Copilot CLI's existing authentication. In GitHub Actions, the `COPILOT_TOKEN` secret supplies the credential.
 

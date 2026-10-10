@@ -1,21 +1,24 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
 import {
-  appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, statSync, writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { catalogue, catalogueIssues, loadConfig, selectChecks } from "../../lib/config.mjs";
+import { catalogue, catalogueIssues, configPath, loadConfig, selectChecks } from "../../lib/config.mjs";
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
+import { groundworkPath, initializeLayout, pathExists } from "../../lib/layout.mjs";
 import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
   validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, pendingCheck, runChecks, source } from "../../lib/runner.mjs";
 
 const skillDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(skillDirectory, "../..");
-const globalInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `VERIFY.md` and `verify.json` when present. Set up project verification files when I ask to adopt the framework.\n";
-const projectInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Read `VERIFY.md` for this project's behaviour guide and use `verify.json` for repeatable checks.\n";
+const oldGlobalInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `VERIFY.md` and `verify.json` when present. Set up project verification files when I ask to adopt the framework.\n";
+const oldProjectInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Read `VERIFY.md` for this project's behaviour guide and use `verify.json` for repeatable checks.\n";
+const globalInstruction = oldGlobalInstruction.replace("`VERIFY.md` and `verify.json`", "`.groundwork/VERIFY.md` and `.groundwork/verify.json`");
+const projectInstruction = oldProjectInstruction.replace("`VERIFY.md`", "`.groundwork/VERIFY.md`").replace("`verify.json`", "`.groundwork/verify.json`");
 const help = `groundwork — checks and evidence
 
   groundwork install              Register all bundled skills and shared instructions
@@ -31,12 +34,20 @@ const help = `groundwork — checks and evidence
 Exit codes: 0 passed, 1 failed, 2 inconclusive or invalid setup.
 `;
 
-function appendOnce(path, marker, content) {
+function instructionUpdate(path, content, legacy) {
   const previous = existsSync(path) ? readFileSync(path, "utf8") : "";
-  if (previous.includes(marker)) return;
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${previous && !previous.endsWith("\n") ? "\n" : ""}${previous ? "\n" : ""}${content}`);
-  console.log(`Updated ${path}`);
+  let next = previous.replaceAll(legacy, content);
+  const sections = next.split(content);
+  if (sections.length > 1) next = sections[0] + content + sections.slice(1).join("");
+  else if (!/^## Verification workflow\s*$/m.test(previous)) {
+    next += `${previous && !previous.endsWith("\n") ? "\n" : ""}${previous ? "\n" : ""}${content}`;
+  }
+  return () => {
+    if (next === previous) return;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, next);
+    console.log(`Updated ${path}`);
+  };
 }
 
 function install() {
@@ -46,7 +57,7 @@ function install() {
     join(process.env.COPILOT_HOME || join(home, ".copilot"), "copilot-instructions.md"),
     join(process.env.XDG_CONFIG_HOME || join(home, ".config"), "opencode", "AGENTS.md"),
   ]) {
-    appendOnce(path, globalInstruction, globalInstruction);
+    instructionUpdate(path, globalInstruction, oldGlobalInstruction)();
   }
   console.log(`Groundwork skills installed: ${skills.join(", ")}. Start a new Copilot session and reload OpenCode's configuration.`);
 }
@@ -54,31 +65,23 @@ function install() {
 function init(directory) {
   const root = resolve(directory || process.cwd());
   ensure(existsSync(root) && statSync(root).isDirectory(), `Project directory does not exist: ${root}`);
-  for (const [name, content] of [
-    ["verify.json", `${JSON.stringify({ checks: {} }, null, 2)}\n`],
-    ["VERIFY.md", readFileSync(join(skillDirectory, "project.md"), "utf8")],
-  ]) {
-    const path = join(root, name);
-    if (existsSync(path)) continue;
-    writeFileSync(path, content, { flag: "wx" });
-    console.log(`Created ${path}`);
-  }
-  appendOnce(join(root, "AGENTS.md"), projectInstruction, projectInstruction);
-  const ignorePath = join(root, ".gitignore");
-  const ignored = existsSync(ignorePath) ? readFileSync(ignorePath, "utf8").split(/\r?\n/) : [];
-  if (!ignored.includes("/.verify/")) appendOnce(ignorePath, "\n/.verify/\n", "/.verify/\n");
-  console.log("Fill VERIFY.md and verify.json from the project. Start with one real journey.");
+  const update = instructionUpdate(join(root, "AGENTS.md"), projectInstruction, oldProjectInstruction);
+  initializeLayout(root, readFileSync(join(skillDirectory, "project.md"), "utf8"));
+  update();
+  console.log("Fill .groundwork/VERIFY.md and .groundwork/verify.json from the project. Start with one real journey.");
 }
 
 function projectRoot() {
-  let directory = process.cwd();
+  const parts = process.cwd().split(sep);
+  const namespace = parts.lastIndexOf(".groundwork");
+  let directory = namespace < 0 ? process.cwd() : parts.slice(0, namespace).join(sep) || sep;
   while (true) {
-    if (existsSync(join(directory, "verify.json"))) return directory;
+    if (pathExists(configPath(directory))) return directory;
     const parent = dirname(directory);
     if (parent === directory || existsSync(join(directory, ".git"))) break;
     directory = parent;
   }
-  throw new Error("No verify.json found. Adopt the project with groundwork init first.");
+  throw new Error("No .groundwork/verify.json found (or legacy verify.json). Adopt the project with groundwork init first.");
 }
 
 function validateReport(value, id) {
@@ -94,9 +97,10 @@ function validateReport(value, id) {
 }
 
 function report(root) {
-  const id = readFileSync(join(root, ".verify", "latest"), "utf8").trim();
+  const storage = pathExists(groundworkPath(root, "latest")) ? groundworkPath(root) : join(root, ".verify");
+  const id = readFileSync(join(storage, "latest"), "utf8").trim();
   ensure(/^[a-zA-Z0-9_-]+$/.test(id), "Invalid latest run identifier.");
-  const directory = join(root, ".verify", "runs", id);
+  const directory = join(storage, "runs", id);
   const result = validateReport(readJSON(join(directory, "result.json")), id);
   const issues = [...(result.problems || [])];
   if (!result.finishedAt) issues.push("The latest run did not finish.");
@@ -156,7 +160,7 @@ function guide(root, query) {
     if (item.guide) console.log(`  Guide: ${item.guide}`);
     console.log(`  Paths: ${item.paths.join(", ") || "all"}\n  Checks: ${item.checks.join(", ") || "not mapped yet"}`);
   }
-  if (!entries.length) console.log("No matching catalogue entries. Add behaviours and invariants incrementally in verify.json.");
+  if (!entries.length) console.log("No matching catalogue entries. Add behaviours and invariants incrementally in .groundwork/verify.json.");
   const issues = catalogueIssues(config, root, entries.map(item => item.id));
   for (const issue of issues) console.log(`  ${issue}`);
   return issues.length ? 2 : 0;
@@ -167,7 +171,7 @@ async function run(root, args) {
   const config = loadConfig(root);
   const changes = requested.changed ? changedFiles(root, requested.changed) : null;
   const selection = selectChecks(config, { names: requested.names, changedPaths: changes });
-  ensure(selection.names.length > 0, "No checks selected. Add a real check to verify.json or choose a mapped behaviour.");
+  ensure(selection.names.length > 0, "No checks selected. Add a real check to .groundwork/verify.json or choose a mapped behaviour.");
   const task = requested.plan ? validatePlan(readJSON(resolve(requested.plan))) : null;
   const plan = withInvariants(task, config, selection.invariants);
   const ids = [...new Set([...selection.names.flatMap(name => config.checks[name].covers), ...selection.invariants])];
@@ -178,7 +182,7 @@ async function run(root, args) {
     ...assess({ plan, checks: selection.names.map(name => pendingCheck(name, config.checks[name])), problems: catalogueIssues(config, root, ids),
       context: { ...config.context, runnerPlatform: process.platform, runnerArchitecture: process.arch } }),
   };
-  const directory = join(root, ".verify", "runs", id);
+  const directory = groundworkPath(root, "runs", id);
   mkdirSync(directory, { recursive: true });
   const path = join(directory, "result.json");
   const save = () => {
@@ -187,7 +191,7 @@ async function run(root, args) {
     writeJSON(path, result);
   };
   save();
-  writeFileSync(join(root, ".verify", "latest"), `${id}\n`);
+  writeFileSync(groundworkPath(root, "latest"), `${id}\n`);
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.once("SIGINT", interrupt);

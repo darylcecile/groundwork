@@ -10,39 +10,39 @@
   "behaviours": {
     "adoption": {
       "description": "Adopt projects and install or update bundled skills while preserving user setup",
-      "paths": ["skills/**", "lib/distribution.mjs", "package.json", "test/verify.test.mjs", "test/distribution.test.mjs", "test/package.test.mjs"],
+      "paths": ["skills/**", "lib/distribution.mjs", "lib/layout.mjs", "package.json", "test/verify.test.mjs", "test/distribution.test.mjs", "test/package.test.mjs"],
       "entry": "groundwork init / groundwork install / groundwork update",
-      "guide": "VERIFY.md#adopt-a-project"
+      "guide": ".groundwork/VERIFY.md#adopt-a-project"
     },
     "coverage": {
       "description": "Account for every planned requirement using checks and retained observations",
       "paths": ["lib/model.mjs", "test/runner.test.mjs"],
       "entry": "groundwork verify --plan <file>",
-      "guide": "VERIFY.md#plan-and-select-verification"
+      "guide": ".groundwork/VERIFY.md#plan-and-select-verification"
     },
     "catalogue": {
       "description": "Discover behaviours and enforce applicable project invariants",
-      "paths": ["lib/config.mjs", "test/config.test.mjs", "verify.json"],
+      "paths": ["lib/config.mjs", "test/config.test.mjs", ".groundwork/verify.json"],
       "entry": "groundwork view guide / groundwork verify --changed <ref>",
-      "guide": "VERIFY.md#plan-and-select-verification"
+      "guide": ".groundwork/VERIFY.md#plan-and-select-verification"
     },
     "drivers": {
       "description": "Exercise lifecycle drivers, retain repeated trials, and compare source revisions",
       "paths": ["lib/runner.mjs", "test/runner.test.mjs"],
       "entry": "groundwork verify / groundwork verify --base <ref>",
-      "guide": "VERIFY.md#exercise-a-driver-and-compare-revisions"
+      "guide": ".groundwork/VERIFY.md#exercise-a-driver-and-compare-revisions"
     },
     "pr-verification": {
       "description": "Verify a PR against a frozen plan and report results in the importing repository",
       "paths": ["pr-verification/**", ".github/workflows/verify.yml"],
-      "guide": "VERIFY.md#final-pr-verification"
+      "guide": ".groundwork/VERIFY.md#final-pr-verification"
     }
   },
   "invariants": {
     "complete-evidence": {
       "description": "Missing planned requirements or declared evidence cannot produce a passing verification result",
       "checks": ["tests"],
-      "guide": "VERIFY.md#verify-a-behaviour-and-review-evidence"
+      "guide": ".groundwork/VERIFY.md#verify-a-behaviour-and-review-evidence"
     }
   }
 }

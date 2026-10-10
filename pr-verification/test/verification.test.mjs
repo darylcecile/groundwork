@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -136,9 +136,9 @@ test("planning failure leaves configured check results available but cannot prod
   expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
 });
 
-test("project catalogue checks and invariants use the shared runner when the workflow omits a command block", () => {
+test.each([".groundwork/verify.json", "verify.json"])("project catalogue at %s uses the shared runner when the workflow omits a command block", path => {
   const value = fixture();
-  write(join(value.project, "verify.json"), JSON.stringify({
+  write(join(value.project, path), JSON.stringify({
     checks: {
       feature: {command: "true", expect: "The feature passes", covers: ["feature"]},
       boundary: {command: "false", expect: "The required boundary holds"},
@@ -150,6 +150,48 @@ test("project catalogue checks and invariants use the shared runner when the wor
   expect(result.code).toBe(1);
   expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature", "boundary"]);
   expect(result.report.verification.coverage.find(item => item.id === "invariant:boundary").status).toBe("failed");
+});
+
+test("default PR evidence stays inside a nested project's .groundwork and uses its root-relative driver", () => {
+  const value = fixture();
+  const project = join(value.project, "packages/app");
+  write(join(project, "app.txt"), "nested project\n");
+  write(join(project, ".groundwork/scripts/check.mjs"), `import { readFileSync } from "node:fs";
+if (readFileSync("app.txt", "utf8") !== "nested project\\n") process.exit(1);
+console.log("Nested project driver passed");\n`);
+  write(join(project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "bun .groundwork/scripts/check.mjs", expect: "The nested project driver runs from its project root" },
+  } }));
+  write(join(project, "verify.json"), "invalid legacy configuration must not win");
+  const env = { ...value.env, PR_VERIFY_OUTPUT: "", PR_VERIFY_DIRECTORY: "packages/app", PR_VERIFY_CHECKS: "" };
+  const execute = () => spawnSync(process.execPath, [runner], { env, encoding: "utf8" });
+  const first = execute();
+  expect(first.status).toBe(0);
+  const runs = join(project, ".groundwork/runs");
+  const [id] = readdirSync(runs);
+  const report = JSON.parse(readFileSync(join(runs, id, "result.json"), "utf8"));
+  expect(report.status).toBe("passed");
+  expect(report.problems).toEqual([]);
+  expect(readFileSync(join(runs, id, "feature/output.log"), "utf8")).toContain("Nested project driver passed");
+  expect(existsSync(value.output)).toBe(false);
+  expect(existsSync(join(value.project, ".groundwork"))).toBe(false);
+  expect(existsSync(join(project, ".verify"))).toBe(false);
+  expect(execute().status).toBe(0);
+  const previousRuns = readdirSync(runs);
+  expect(previousRuns).toHaveLength(2);
+  const changed = spawnSync(process.execPath, [runner], { env: { ...env, TEST_AGENT: "mutate" }, encoding: "utf8" });
+  expect(changed.status).toBe(2);
+  const changedRun = readdirSync(runs).find(id => !previousRuns.includes(id));
+  const changedReport = JSON.parse(readFileSync(join(runs, changedRun, "result.json"), "utf8"));
+  expect(changedReport.problems.join(" ")).toContain("source changed during verification");
+});
+
+test("local PR artifacts cannot recursively copy their own evidence directory", () => {
+  const value = fixture();
+  value.output = join(value.project, ".groundwork/runs/pr-artifact-overlap");
+  const result = run(value, { PR_VERIFY_OUTPUT: value.output, PR_VERIFY_ARTIFACTS: ".groundwork" });
+  expect(result.code).toBe(2);
+  expect(result.report.problems.join(" ")).toContain("Artifact path overlaps the evidence directory");
 });
 
 test("a multi-command block stops at the failed check", () => {

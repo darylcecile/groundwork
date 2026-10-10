@@ -6,14 +6,16 @@
 - Required check: `groundwork verify tests`.
 - Implementation: `skills/verify-work/verify.mjs` and shared `lib/config.mjs`, `lib/model.mjs`, and `lib/runner.mjs`.
 - Checks: `test/` and `pr-verification/test/`.
-- Plan, configuration, and driver reference: [verification reference](skills/verify-work/references/verification.md).
+- Plan, configuration, and driver reference: [verification reference](../skills/verify-work/references/verification.md).
 - After workflow changes: `actionlint .github/workflows/verify.yml`.
 
 ## Journeys
 
 ### Adopt a project
 
-Start with an existing project that has its own instructions and ignore rules. Run `groundwork init`. It creates the behaviour guide and check files and appends the workflow reference and evidence ignore rule. Existing content survives, and a second run leaves it intact.
+Start with an existing project that has its own instructions and ignore rules. Run `groundwork init`. It creates `.groundwork/VERIFY.md`, `.groundwork/verify.json` and local ignore rules, with root `AGENTS.md` pointing agents to the guide and checks. Existing content survives, and a second run leaves it intact. Legacy root verification files and `.verify/` evidence migrate into `.groundwork/`; conflicting destinations stop migration without overwrites.
+
+Reusable Groundwork-owned helpers and supporting configs belong in `.groundwork/scripts/` and `.groundwork/config/`. Plans, task notes, scratch files and run output live in ignored subpaths. Commands run from the project root, even when invoked inside `.groundwork/`. Changes to reusable verification inputs invalidate a saved result; runtime files do not.
 
 ### Verify a behaviour and review evidence
 
@@ -21,7 +23,7 @@ The integration test creates a small preferences CLI with broken theme persisten
 
 ### Plan and select verification
 
-Before changing behaviour, record a small plan such as `.verify/plan.json`, with each requirement bound to the assertions that establish it. Run relevant checks with `--plan`; omitted required coverage must remain unverified.
+Before changing behaviour, record a small plan such as `.groundwork/plans/task.json`, with each requirement bound to the assertions that establish it. Run relevant checks with `--plan`; omitted required coverage must remain unverified.
 
 Use a disposable project's catalogue to exercise `view guide [query]`, named selection, and `--changed <ref>`. Required checks and active invariant checks must run. Changes matching check or catalogue paths select their checks; legacy unscoped checks remain conservative. Unmapped paths and behaviours without checks remain visible planning signals. Guide inspection reports stale references without executing commands.
 
@@ -43,10 +45,10 @@ Inspect the saved plan, requirement coverage, trial logs, observations, and arti
 
 ### Final PR verification
 
-The reusable workflow is `.github/workflows/verify.yml`; its runtime and prompt live in `pr-verification/`. It runs the importing project's configured checks and an agent-led pass, captures evidence, and updates the importing PR's verification comment. The integration tests cover failures, missing evidence, source changes, and comment targeting and updating.
+The reusable workflow is `.github/workflows/verify.yml`; its runtime and prompt live in `pr-verification/`. It runs the importing project's configured checks and an agent-led pass, captures evidence, and updates the importing PR's verification comment. It discovers `.groundwork/verify.json` (with legacy fallback), and local evidence defaults to the selected project's `.groundwork/runs/pr-<id>/`. The integration tests cover failures, missing evidence, source changes, nested project paths, and comment targeting and updating.
 
 ## Environment and evidence
 
-Requires Bun, Git, and Bash. Tests use disposable local projects and controlled integrations without network credentials. `VERIFY_TEST_TMPDIR` selects their temporary parent directory when needed. Test fixtures are removed after use; recorded run evidence remains under `.verify/runs/`.
+Requires Bun, Git, and Bash. Tests use disposable local projects and controlled integrations without network credentials. `VERIFY_TEST_TMPDIR` selects their temporary parent directory when needed. Test fixtures are removed after use; recorded run evidence remains under `.groundwork/runs/`.
 
 Keep fixture, mocked-service, and workload context non-secret. The runner records source fingerprints and checks evidence freshness; relevant external services and ignored inputs still need explicit observations when they change.

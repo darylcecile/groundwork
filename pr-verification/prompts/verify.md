@@ -6,7 +6,7 @@ The runner supplies absolute paths to the PR context, frozen verification plan, 
 
 ## Work
 
-1. Read the PR's goal, applicable project instructions, relevant source, diff, and frozen requirements. Use the supplied catalogue and selected checks to locate the relevant behaviour.
+1. Read the PR's goal, applicable project instructions, relevant source, diff, and frozen requirements. Use the supplied catalogue and selected checks to locate the relevant behaviour. Groundwork's project guide and configuration live at `.groundwork/VERIFY.md` and `.groundwork/verify.json` (with root paths supported for legacy projects); root `AGENTS.md` points agents to them.
 2. Read the setup and check logs. Keep failed configured checks visible even if other observations are positive.
 3. Inspect existing project tests and control tools. Exercise the relevant behaviour through its real UI, API, or CLI entry point. Reuse completed checks and their evidence when they genuinely establish a requirement; add targeted verification for remaining requirements. Rerun a completed check only when new information or changed state requires it.
 4. For UI changes, inspect the rendered result and interaction at relevant viewports using the project's available browser tooling. Capture and inspect screenshots where they help establish the result. For other changes, capture meaningful command output, responses, or measurements.

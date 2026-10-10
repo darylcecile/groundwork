@@ -64,9 +64,31 @@ test("install discovers every bundled skill and preserves unrelated personal ski
   for (const id of ["verify-work", "review-work"]) expect(realpathSync(installedSkill(value.home, id))).toBe(realpathSync(join(source, "skills", id)));
   expect(existsSync(installedSkill(value.home, "shared"))).toBe(false);
   const instructions = readFileSync(join(value.home, ".copilot/copilot-instructions.md"), "utf8");
+  expect(instructions).toContain("`.groundwork/VERIFY.md` and `.groundwork/verify.json`");
   value.run(process.execPath, [cli(source), "install"]);
   expect(readFileSync(join(value.home, ".copilot/copilot-instructions.md"), "utf8")).toBe(instructions);
   expect(readFileSync(join(installedSkill(value.home, "personal-work"), "SKILL.md"), "utf8")).toBe("Personal content\n");
+});
+
+test("install preserves customized verification instructions and deduplicates exact generated sections", () => {
+  const value = fixture();
+  const source = bundle(value.root);
+  const custom = "# Personal rules\n\n## Verification workflow\n\nUse our custom verification process.\n";
+  const copilot = join(value.home, ".copilot/copilot-instructions.md");
+  write(copilot, custom);
+  value.run(process.execPath, [cli(source), "install"]);
+  expect(readFileSync(copilot, "utf8")).toBe(custom);
+  const opencode = join(value.home, ".config/opencode/AGENTS.md");
+  const current = readFileSync(opencode, "utf8");
+  const legacy = current.replaceAll(".groundwork/", "");
+  write(opencode, `${legacy}\nKeep this rule.\n\n${current}`);
+  value.run(process.execPath, [cli(source), "install"]);
+  const updated = readFileSync(opencode, "utf8");
+  expect(updated.match(/## Verification workflow/g)).toHaveLength(1);
+  expect(updated).toContain("Keep this rule.");
+  expect(updated).toContain("`.groundwork/verify.json`");
+  value.run(process.execPath, [cli(source), "install"]);
+  expect(readFileSync(opencode, "utf8")).toBe(updated);
 });
 
 test("install refuses a conflicting user skill before changing registrations", () => {

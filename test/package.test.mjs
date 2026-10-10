@@ -38,6 +38,12 @@ test("the distributed CLI installs its skills with references that resolve throu
     const help = run(process.execPath, [join(home, ".agents/skills/verify-work/verify.mjs"), "--help"], root, env);
     expect(help).toContain("groundwork verify");
     expect(help).toContain("groundwork view report");
+    const project = join(root, "project");
+    mkdirSync(project);
+    run(process.execPath, [join(home, ".agents/skills/verify-work/verify.mjs"), "init"], project, env);
+    expect(readdirSync(project).sort()).toEqual([".groundwork", "AGENTS.md"]);
+    expect(JSON.parse(readFileSync(join(project, ".groundwork/verify.json"), "utf8"))).toEqual({ checks: {} });
+    expect(readFileSync(join(project, ".groundwork/VERIFY.md"), "utf8").trim().length).toBeGreaterThan(0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
