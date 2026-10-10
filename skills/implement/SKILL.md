@@ -50,7 +50,7 @@ As you progress through a task, make sure to keep the checklist state up to date
 Additionally, regularly review the decisions and context sections to ensure that any changes or new information are accurately reflected. This practice helps maintain alignment with the project's goals and facilitates effective communication among team members.
 
 > [!IMPORTANT]
-> When deciding the models, make sure to consider the task requirements, the capabilities of each available models, and the expected outcomes to ensure the most suitable model is chosen for the task. Never choose the same model for implementation and judging; ideally choose models from different families or with complementary strengths.
+> When deciding the models, make sure to consider the task requirements, the capabilities of each available models, and the expected outcomes to ensure the most suitable model is chosen for the task. Never choose the same model for implementation and judging; ideally choose models from different families or with complementary strengths. For example, you might choose a model optimized for code generation for implementation (like `gpt-6 astra` using `xhigh`) and a model optimized for reasoning and evaluation for judging (like `claude-opus-5.5` using `xhigh`).
 
 Order of operation:
 - Review the issue or reference provided by the user.
@@ -67,3 +67,11 @@ Order of operation:
   - The judge should check that the definition of done has been met before approving the task as complete.
 - Delete the task file once the task is fully completed and verified; and the task meets definition of done. Then make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.
 - Once all tasks are completed and verified - with evidence documented with groundwork, delete the folder `.groundwork/tasks/` when empty.
+
+## Remember
+
+- Avoid over-architecting; it undermines good implementation.
+- Complexity reduces value. Keep cyclomatic complexity low and avoid unnecessary complexity.
+- Make the output understandable to humans: prefer clear formatting, reviewable implementation, and simple solutions that emphasize readability and maintainability.
+- Avoid test-slop; ensure that tests are precise, reliable, and cover the intended functionality without being overly specific
+
