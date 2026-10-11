@@ -11,25 +11,25 @@ Use the relevant sections of [playbooks.md](playbooks.md) to choose verification
 
 ## During ordinary work
 
-1. Read the request, project instructions, relevant code, callers, and tests. If present, read `.groundwork/VERIFY.md` and `.groundwork/verify.json` (legacy projects may still have them at the root); use `groundwork view guide` to find relevant behaviours and checks.
+1. Read the request, project instructions, relevant code, callers, and tests. If present, read `.groundwork/VERIFY.md` and `.groundwork/verify.json` (legacy projects may still have them at the root); use `groundwork view guide` to find relevant behaviours and checks. Follow relevant map links and check their source claims. Use `explore` when entry points, ownership, dependencies, or verification paths are unclear; reuse current findings from the task.
 2. Identify the intended outcomes, constraints, and deliverables before editing. Save a plan such as `.groundwork/plans/task.json` for multi-part changes or when coverage would otherwise be hard to track. Straightforward tasks can track their outcomes in the conversation. Ask only about uncertainty that materially changes the work.
 3. Choose relevant playbook cases and establish how to exercise the behaviour. Reproduce a reported bug when feasible, using the actual UI, API, or CLI entry point. A source-aware regression driver can later use `--base <ref>` to exercise both revisions.
 4. Make the smallest suitable change using existing patterns. Finish a coherent implementation batch before running checks. Keep working through relevant failures and report material blockers promptly.
 5. When `.groundwork/verify.json` or a legacy root `verify.json` exists, run relevant checks with `groundwork verify`; add `--plan` when using a saved plan. Otherwise run the project's existing verification commands directly. Reuse coverage and add a regression test only for a realistic failure the current tests miss.
 6. Inspect the actual observations and saved evidence. For UI changes, view the rendered result and exercise the interaction; compare against supplied references at relevant viewports. If the required observation is unavailable, leave that acceptance condition unverified and explain the gap.
-7. Review the complete diff for intended behaviour, missed requirements, fit with the existing design, unnecessary complexity, and unrelated changes. Fix concrete issues. After further source changes, rerun affected checks. Stop once the outcome and required checks are satisfied.
+7. Review the complete diff for intended behaviour, missed requirements, fit with the existing design, unnecessary complexity, and unrelated changes. Fix concrete issues, including stale facts and links in affected existing maps. After further source changes, rerun affected checks. Stop once the outcome and required checks are satisfied.
 8. Close every original requirement with its result and evidence, or state its remaining gap. Finish with the requested delivery state. For PR work, include relevant outstanding review feedback, base/conflict status, and whether changes were pushed, according to the user's instructions.
 
 Report each outcome as **verified**, **failed**, or **unverified**, with supporting observations. Bind a requirement to a check only after confirming that the check actually asserts it. Inspect images, traces, and other evidence before using them to support a claim.
 
 ## When asked to adopt Groundwork in a project
 
-1. Inspect existing instructions, setup commands, CI, tests, and application-control tools.
+1. Use `explore` to understand the primary user flow, its owning modules and constraints, and the existing setup commands, CI, tests, and application-control tools. Keep these findings for the adoption steps below.
 2. Run `groundwork init` from the intended project root. This preserves existing content and migrates known legacy Groundwork files without overwriting collisions. Fill in `.groundwork/VERIFY.md` and `.groundwork/verify.json` using what the project actually supports. Root `AGENTS.md` points agents to them.
-3. Start with one real feature or reported bug. Record its entry point, starting state, actions, expected result, implementation location, check, and evidence. Add catalogue entries and path mappings incrementally.
+3. Start with one real feature or reported bug. Retain its useful exploration findings in `.groundwork/maps/<area>.md`, reusing existing project documentation. Record the journey's entry point, starting state, actions, expected result, implementation location, check, and evidence in the behaviour guide or linked map. Link the map from `.groundwork/VERIFY.md`; catalogue entries can use `.groundwork/maps/<area>.md#anchor` as their `guide`. Add entries and path mappings from the actual findings, preserving existing check bindings.
 4. Reuse existing drivers and test runners. If the real interaction cannot yet be exercised, build the smallest project-owned driver needed for that journey under `.groundwork/scripts/`. Keep application-specific setup, navigation, and assertions there. Put new Groundwork-specific tool configs in `.groundwork/config/` and pass their paths explicitly; use a tool's required discovery path only when it cannot load an explicitly located config.
 5. Use `required: true` for checks needed on every change. Record project invariants with their enforcing checks and path scope. Add lifecycle commands, structured results, or measurements when useful.
-6. Run the selected scenario and required checks. Fix setup problems and inspect the evidence. Leave genuine environment blockers explicit. Keep the behaviour guide limited to the behaviours currently needed and maintain it as they change.
+6. Run the selected scenario and required checks. Fix setup problems and inspect the evidence. Leave genuine environment blockers explicit. Keep the behaviour guide and maps focused on the explored scope and maintain them as it changes. A source-derived map identifies where to verify; it is not itself a runtime observation.
 
 ## CLI
 

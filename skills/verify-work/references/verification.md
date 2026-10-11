@@ -102,6 +102,10 @@ Behaviour and invariant IDs use the same characters as requirement IDs and are u
 - An **invariant** has a nonempty `description`, optional `paths` and `guide`, and a nonempty `checks` array referencing existing checks. Those checks also cover the invariant automatically.
 - `guide` is a safe project-relative `.md` or `.markdown` file, optionally followed by `#anchor`. Headings and explicit anchor IDs are supported; stale files and anchors are reported.
 
+Use the `explore` skill to establish the entry points, ownership, affected paths, and verification options behind these entries. Durable maps live at `.groundwork/maps/<area>.md`; a catalogue `guide` can point to a section such as `.groundwork/maps/preferences.md#save-preferences`. Link the map from `.groundwork/VERIFY.md` as well. Preserve existing check bindings, and add `covers` only when the check actually asserts that behaviour. A map may identify a gap without inventing a check to fill it.
+
+Map Markdown links are relative to the map file; catalogue paths remain project-root-relative. Recheck affected map claims against current source when using or updating them. The CLI validates linked files and anchors, not the factual accuracy of the map's contents.
+
 Find entries with `groundwork view guide [query]`. Search matches IDs, descriptions, paths, and entry points without running any check command.
 
 ## Selecting checks

@@ -22,6 +22,7 @@ Keep the shared code independent of any application's stack. Put application set
 
 ## Source map
 
+- `skills/explore/`: investigation workflow and reusable subsystem-map template.
 - `skills/verify-work/verify.mjs`: CLI, installation, adoption, guide discovery, and saved reports.
 - `lib/config.mjs`: configuration validation, catalogue, and check selection.
 - `lib/layout.mjs`: project-owned paths, runtime exclusions, and legacy-file migration.

@@ -10,6 +10,8 @@ Carry out the requested work as described by the user. Make sure to follow the p
 
 If the user has provided an issue or reference, make sure to review it thoroughly to understand the context, requirements, and any constraints before starting the implementation. If the provided source is ambiguous or incomplete, seek clarification from the user before proceeding.
 
+For a nontrivial change, use the `explore` skill before deciding the implementation scope and approach. Reuse a relevant exploration from this task when it is still current. Carry its entry points, owning modules, data flow, constraints, affected callers, verification options, and unresolved questions into the task context and any delegated brief. Existing `.groundwork/maps/` documents help navigate; confirm the relevant claims against current source before relying on them.
+
 Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
 
 Keep Groundwork-owned project files inside `.groundwork/`: reusable helpers in `scripts/`, supporting tool configs in `config/`, plans in `plans/`, and scratch files in `tmp/`. Reuse existing project tools. Keep root `AGENTS.md` as the discoverable entry point to `.groundwork/VERIFY.md` and `.groundwork/verify.json`; use a tool's required discovery path when it cannot load an explicitly located config. Run commands from the project root and pass helper/config paths explicitly. Commit reusable files; keep task notes, plans, scratch files and run evidence ignored through `.groundwork/.gitignore`.
@@ -54,11 +56,17 @@ Additionally, regularly review the decisions and context sections to ensure that
 
 **Order of operation:**
 - Review the issue or reference provided by the user.
-- Create a task file in `.groundwork/tasks/` with the appropriate priority, model, and name.
-- Continuously update the task files with context, decisions, and progress.
+- Explore the affected behaviour and its boundaries; use the findings to define the task and verification needs.
+- Create task files in `.groundwork/tasks/` with the appropriate priority, model, and name.
+	- Make sure to slice up the tasks appropriately to ensure manageable and coherent units of work.
+	- Defining multiple smaller tasks makes parallel implementation and verification more efficient and manageable.
+	- The models should be clearly specified (no vague deferral to "use any model" or similar).
+	- The models should be different from the ones used for judging to ensure independent evaluation.
+- Continuously update the relevant task files with context, decisions, and progress.
 - Once you are confident that the task files are correctly set up, use Groundwork to prepare the tasks for implementation; defining real objectives, goals, and journeys based on the context of the task files themselves.
 - For each task, spin up the necessary subagent (based on model specified in the task), and assign it to handle the implementation according to the prepared objectives, goals, and journeys.
 - Follow the implementation checklist to complete the task.
+- Refresh affected existing maps and their guide/catalogue links as part of the change. Use `explore` to retrace a changed flow when needed; distinguish source findings from runtime observations.
 - Only when the implementation checklist is complete, go through the verification checklist and verify all items.
 - Keep the task file up to date until the task is completed and verified.
 - Make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.

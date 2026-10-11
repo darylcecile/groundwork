@@ -4,6 +4,8 @@ Read the supplied PR context, project instructions, relevant diff, behaviour gui
 
 Groundwork's project guide and check configuration are `.groundwork/VERIFY.md` and `.groundwork/verify.json`; legacy projects may still have them at the root. Root `AGENTS.md` remains the instruction entry point.
 
+Follow relevant subsystem-map links from the guide or catalogue and confirm their claims against the current source. Use them to identify entry points, affected callers, constraints, and verification gaps. A map's source findings are planning context, not runtime proof.
+
 Identify the requested outcomes and important behaviour the change promises to preserve. Keep each requirement specific enough to observe. Use stable lowercase IDs. Select relevant cases from the available project tools and the verification playbooks; keep roles, policy, and budgets grounded in the project and request.
 
 Write the designated plan file as JSON:

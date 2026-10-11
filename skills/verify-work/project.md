@@ -12,6 +12,10 @@ This guide lives at `.groundwork/VERIFY.md`, linked from root `AGENTS.md`. Keep 
 - Existing test and application-control tools:
 - Required checks:
 
+## Subsystem maps
+
+Link relevant `.groundwork/maps/<area>.md` documents here using paths relative to this guide, such as `maps/<area>.md`. Use the `explore` skill to establish or refresh ownership, data flow, dependencies, constraints, change impact, and verification paths. Check the cited source before relying on an existing map. Keep journey instructions in one place and link to them; distinguish source findings from observed runtime behaviour.
+
 ## Behaviours
 
 ### First behaviour

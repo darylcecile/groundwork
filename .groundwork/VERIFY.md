@@ -17,6 +17,12 @@ Start with an existing project that has its own instructions and ignore rules. R
 
 Reusable Groundwork-owned helpers and supporting configs belong in `.groundwork/scripts/` and `.groundwork/config/`. Plans, task notes, scratch files and run output live in ignored subpaths. Commands run from the project root, even when invoked inside `.groundwork/`. Changes to reusable verification inputs invalidate a saved result; runtime files do not.
 
+### Explore a subsystem
+
+Use `explore` to explain a focused question such as how named checks include active invariants. Expect an answer with source references and clear limits on what was observed. For an explicit mapping request, trace the subsystem into a reusable document under `.groundwork/maps/`, with entry points, owning modules, data flow, constraints, change impact, verification options and gaps.
+
+The [verification flow map](maps/verification.md) connects project discovery, configuration, selection, execution, and saved reports. Recheck its source anchors before relying on it. Catalogue guide files and anchors should resolve through `groundwork view guide`; inspect other map links directly. Their factual accuracy needs source review and runtime evidence where claimed. The package test checks that the installed `explore` skill and its template are included and readable.
+
 ### Verify a behaviour and review evidence
 
 The integration test creates a small preferences CLI with broken theme persistence. Its driver sets a theme and reads it in a new process. Verification fails on the original implementation, passes after the fix, and retains both runs. A saved passing result becomes inconclusive when its source or evidence subsequently changes.

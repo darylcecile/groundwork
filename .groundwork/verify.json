@@ -24,7 +24,7 @@
       "description": "Discover behaviours and enforce applicable project invariants",
       "paths": ["lib/config.mjs", "test/config.test.mjs", ".groundwork/verify.json"],
       "entry": "groundwork view guide / groundwork verify --changed <ref>",
-      "guide": ".groundwork/VERIFY.md#plan-and-select-verification"
+      "guide": ".groundwork/maps/verification.md#catalogue-and-selection"
     },
     "drivers": {
       "description": "Exercise lifecycle drivers, retain repeated trials, and compare source revisions",

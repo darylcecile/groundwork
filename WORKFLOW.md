@@ -4,7 +4,7 @@
 
 ## The working loop
 
-1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
+1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
 2. **Choose how to prove it.** Find the real path through the feature and the existing checks. For a bug, reproduce the reported failure when possible. Decide which observations would establish success before changing the implementation.
 3. **Make the smallest suitable change.** Follow the project's established patterns. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
 4. **Verify and review.** Exercise the changed behaviour, run the project's required checks, and inspect the complete diff for missed requirements, regressions, unnecessary complexity, and unrelated changes. Rerun affected checks after subsequent code changes. Stop when the requested outcome and required checks are satisfied.
@@ -50,6 +50,8 @@ Each adopted project supplies a small behaviour guide in `.groundwork/VERIFY.md`
 3. How does a user reach and exercise it?
 4. What must happen?
 5. Which command or direct observation checks that, and where is the evidence?
+
+The `explore` skill establishes those relationships. During adoption or an explicit mapping request, retain stable findings in `.groundwork/maps/<area>.md` and link them from the guide and relevant catalogue entries. Include the inspected source, important ownership and flow relationships, constraints, verification paths, and remaining gaps. Reuse existing documentation and refresh affected maps when behaviour changes. Maps guide investigation; their source-derived claims do not substitute for exercising the behaviour.
 
 Reuse the project's existing browser tooling, test runner, API client, and development commands. When a recurring interaction needs automation, make one small project-owned driver under `.groundwork/scripts/`; put its supporting configs in `.groundwork/config/`. Keep task plans, notes, scratch files and evidence under `.groundwork/` as well. Update the behaviour guide when the feature's entry point or behaviour changes.
 

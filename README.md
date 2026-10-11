@@ -3,6 +3,7 @@
 A small personal workflow for GitHub Copilot CLI/app and OpenCode 2. Give the agent a task in normal chat. It records the intended outcome, makes the change, exercises the relevant behaviour, and brings back evidence for each requirement.
 
 - **[Workflow and confidence framework](WORKFLOW.md):** what the agent does and what counts as verified.
+- **[`explore` skill](skills/explore/SKILL.md):** understand a feature's flow, ownership, dependencies, constraints, and verification paths; retain reusable subsystem maps when requested.
 - **`verify-work` skill:** the same workflow in both products.
 - **[Verification reference](skills/verify-work/references/verification.md):** plans, behaviour catalogues, project invariants, drivers, and comparisons.
 - **`groundwork` CLI:** repeatable checks, requirement coverage, retained evidence, and source-aware reports.
@@ -58,6 +59,7 @@ AGENTS.md                     Agent-discoverable workflow reference
   .gitignore                  Ignore only local working files and evidence
   scripts/                    Reusable Groundwork-owned drivers and helpers
   config/                     Supporting tool configs, loaded explicitly
+  maps/                       Reusable subsystem and feature maps
   plans/                      Local task plans (ignored)
   tasks/                      Local implementation notes (ignored)
   tmp/                        Scratch files (ignored)
@@ -74,6 +76,22 @@ Keep `.groundwork/` itself tracked: changes to its guide, checks, scripts and co
 Run `groundwork init` again to move legacy root `verify.json`, `VERIFY.md` and `.verify/` contents into `.groundwork/`. It preserves existing content, updates catalogue references to the moved guide and refreshes the generated `AGENTS.md` instruction. Conflicting destinations, including names differing only in case or Unicode normalization, stop migration before files are moved. A legacy `.verify/.gitignore` is preserved as the inactive `.groundwork/legacy-verify.gitignore`, so old runtime ignore rules cannot hide reusable inputs. Review custom Markdown links in a moved guide and any references to old paths when relocating your own helper scripts.
 
 The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root configuration supported when that file is absent. New runs always use `.groundwork/runs/`; the CLI can still read legacy evidence until a new run is started or it is migrated. Rerun verification after migration because the source paths have changed.
+
+## Explore a project
+
+Ask the agent in normal chat:
+
+> Use explore to explain how saving a document works, which modules own it, and what a change could affect.
+
+For a reusable map:
+
+> Use explore to map document saving under .groundwork/maps/ and connect it to the existing verification guide and checks.
+
+`explore` traces entry points, data and state, dependencies, constraints, and relevant history, with source references and explicit gaps. It can use existing project tools to observe runtime behaviour when needed. A focused question produces an answer in chat; project adoption and explicit mapping requests retain useful findings in `.groundwork/maps/<area>.md` using the bundled map template.
+
+Maps are tracked project documents, linked from `.groundwork/VERIFY.md` and appropriate catalogue entries. They record the inspected source and distinguish code findings from runtime observations. Recheck the relevant claims before reuse and refresh affected areas as the implementation changes. `groundwork view guide` finds catalogue entries and their guide links; open the linked map for the detailed flow.
+
+The implementation workflow uses `explore` before a nontrivial change and passes its findings into task planning and verification. Current findings can be reused within a task.
 
 ## Commands
 
