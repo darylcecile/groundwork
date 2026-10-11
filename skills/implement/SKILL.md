@@ -22,8 +22,8 @@ The task documentation should be structured in the following manner:
 # {Task Name}
 
 - **Priority:** <priority of the task>
-- **Model:** <model to be used for the task>
-- **Judge Model:** <model to be used for judging the task>
+- **Model:** <model ID to be used for the task>
+- **Judge Model:** <model ID to be used for judging the task>
 
 ## Task Overview
 <brief description of the task; including its use case>
@@ -52,7 +52,7 @@ Additionally, regularly review the decisions and context sections to ensure that
 > [!IMPORTANT]
 > When deciding the models, make sure to consider the task requirements, the capabilities of each available models, and the expected outcomes to ensure the most suitable model is chosen for the task. Never choose the same model for implementation and judging; ideally choose models from different families or with complementary strengths. For example, you might choose a model optimized for code generation for implementation (like `gpt-6 astra` using `xhigh`) and a model optimized for reasoning and evaluation for judging (like `claude-opus-5.5` using `xhigh`).
 
-Order of operation:
+**Order of operation:**
 - Review the issue or reference provided by the user.
 - Create a task file in `.groundwork/tasks/` with the appropriate priority, model, and name.
 - Continuously update the task files with context, decisions, and progress.
@@ -61,11 +61,20 @@ Order of operation:
 - Follow the implementation checklist to complete the task.
 - Only when the implementation checklist is complete, go through the verification checklist and verify all items.
 - Keep the task file up to date until the task is completed and verified.
+- Make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.
 - When a subagent reports a task as completed, spawn a new judge subagent (based on task judge model specified) to evaluate the implementation and ensure it meets the defined criteria.
   - Judge agents can give feedback and request revisions (which should be outlined in the task file).
   - Revisions should be addressed before the task can be considered complete and verified.
   - The judge should check that the definition of done has been met before approving the task as complete.
-- Delete the task file once the task is fully completed and verified; and the task meets definition of done. Then make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.
+  - The judge should provide clear reasoning for any requested revisions to ensure the implementer understands the necessary changes.
+  - The judge MUST evaluate the implementation for correctness, completeness, adherence to requirements, and overall quality _INCLUDING_ checking for slop and complexity.
+  - The judge's response should cover:
+    - Correctness of the implementation.
+    - Completeness of the implementation based on the definition of done - as specified in the task file.
+    - Adherence to the defined requirements - as specified in the task file.
+    - Overall quality, including readability, maintainability, and efficiency.
+    - Identification of any slop or unnecessary complexity - based on `dmmulroy/anti-slop` guidelines.
+- Delete the task file once the task is fully completed and verified; and the task meets definition of done. 
 - Once all tasks are completed and verified - with evidence documented with groundwork, delete the folder `.groundwork/tasks/` when empty.
 
 ## Remember
@@ -73,5 +82,6 @@ Order of operation:
 - Avoid over-architecting; it undermines good implementation.
 - Complexity reduces value. Keep cyclomatic complexity low and avoid unnecessary complexity.
 - Make the output understandable to humans: prefer clear formatting, reviewable implementation, and simple solutions that emphasize readability and maintainability.
-- Avoid test-slop; ensure that tests are precise, reliable, and cover the intended functionality without being overly specific
-
+- Avoid test-slop; ensure that tests are precise, reliable, and cover the intended functionality without being overly specific.
+- Avoid implementation slop; you can use https://github.com/dmmulroy/anti-slop/tree/main for guidance and best practices.
+- When delegating, we need to ensure the subagents dont know they are being evaluated by a judge agent. This helps maintain unbiased and accurate assessments of their work.
