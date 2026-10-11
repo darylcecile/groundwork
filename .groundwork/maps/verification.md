@@ -3,16 +3,16 @@
 ## Scope and source basis
 
 - **Question:** how local project discovery, configuration/catalogue selection, execution, and saved reports connect. PR verification is included only as a consumer of the shared flow; installation, distribution, and PR comment publishing are outside this map.
-- **Inspected:** 2026-10-11; revision `3cacfb17f5037e29e9965204e91a2d7b58871b0c`, plus the working tree described below.
-- **Relevant working-tree changes:** the new `skills/explore/` skill/template and edits to `.groundwork/VERIFY.md`, `skills/verify-work/SKILL.md`, `skills/verify-work/project.md`, `skills/verify-work/references/verification.md`, and `pr-verification/prompts/{plan,verify}.md` add map discovery, maintenance, and evidence guidance. README, workflow, contribution, and implementation-skill documentation also integrate exploration. The runtime modules and assertion sources cited below had no local changes at inspection. The subsequent `.groundwork/verify.json` edit links the existing `catalogue` entry to this map without changing check bindings. These documentation/configuration changes participate in source freshness.
-- **Source basis:** the [CLI](../../skills/verify-work/verify.mjs), [layout](../../lib/layout.mjs), [configuration](../../lib/config.mjs), [assessment model](../../lib/model.mjs), [runner](../../lib/runner.mjs), and shared portions of the [PR wrapper](../../pr-verification/scripts/verify.mjs). Assertion sources are identified under [Verification options and gaps](#verification-options-and-gaps).
-- **Evidence limits:** the flow below is **source read**, unless labelled otherwise. The only CLI interaction observed was read-only catalogue discovery, recorded under [Runtime observations](#runtime-observations). No verification run, saved report, baseline comparison, or live PR agent was exercised for this map. Test assertions were read, not run.
+- **Inspected:** 2026-10-11; revision `22bd514b88f364e091ef27d8578046734ac05b08`, plus the working tree described below.
+- **Relevant working-tree changes:** the terminal feature-map change adds `map [feature]`, optional behaviour `dependsOn` metadata, focused regression coverage, and related exploration/verification guidance. `.groundwork/verify.json` records the PR wrapper's existing dependencies on catalogue selection, coverage assessment and driver execution. Existing check bindings are preserved, and `tests` additionally covers the new `feature-map` behaviour. Selection semantics remain unchanged. Historical observations below retain their original source context.
+- **Source basis:** the [CLI](../../skills/verify-work/verify.mjs), [layout](../../lib/layout.mjs), [configuration](../../lib/config.mjs), [terminal map renderer](../../lib/map.mjs), [assessment model](../../lib/model.mjs), [runner](../../lib/runner.mjs), and shared portions of the [PR wrapper](../../pr-verification/scripts/verify.mjs). Assertion sources are identified under [Verification options and gaps](#verification-options-and-gaps).
+- **Evidence limits:** the flow below is **source read**, unless labelled otherwise. Historical catalogue-discovery observations are recorded under [Runtime observations](#runtime-observations). Verification runs and their source/evidence context are retained separately under `.groundwork/runs/`; a source refresh of this map does not refresh older runtime observations.
 
 ## Behaviour and entrypoints
 
 Groundwork resolves a configured project, selects its project-owned checks, combines an optional task plan with active invariants, and runs checks against identified source. It retains logs, observations, and artifacts, then assesses both execution and requirement coverage. A later report view reassesses the saved evidence and source freshness without rerunning the checks.
 
-The installed `groundwork` entry is `skills/verify-work/verify.mjs` ([package.json — `bin`](../../package.json)). Local entrypoints are `init [directory]`, `view guide [query]`, `verify [check ...] [--plan file] [--changed ref] [--base ref]`, and `view report`. Names passed to `verify` are **check IDs**, not behaviour IDs.
+The installed `groundwork` entry is `skills/verify-work/verify.mjs` ([package.json — `bin`](../../package.json)). Local entrypoints are `init [directory]`, `view guide [query]`, `map [feature]`, `verify [check ...] [--plan file] [--changed ref] [--base ref]`, and `view report`. Names passed to `verify` are **check IDs**; a feature in the terminal map is a **behaviour ID**.
 
 Existing journeys remain in the guide: [Adopt a project](../VERIFY.md#adopt-a-project), [Plan and select verification](../VERIFY.md#plan-and-select-verification), [Verify a behaviour and review evidence](../VERIFY.md#verify-a-behaviour-and-review-evidence), and [Exercise a driver and compare revisions](../VERIFY.md#exercise-a-driver-and-compare-revisions). Relevant catalogue IDs are `adoption`, `catalogue`, `coverage`, `drivers`, and invariant `complete-evidence` ([.groundwork/verify.json](../verify.json)).
 
@@ -20,9 +20,10 @@ Existing journeys remain in the guide: [Adopt a project](../VERIFY.md#adopt-a-pr
 
 | Owner | Responsibility and state |
 | --- | --- |
-| [skills/verify-work/verify.mjs — `projectRoot`, `options`, `guide`, `run`, `report`](../../skills/verify-work/verify.mjs) | Local command dispatch, project discovery, option parsing, run identity, signal handling, incremental `result.json` writes, `.groundwork/latest`, and report presentation. |
+| [skills/verify-work/verify.mjs — `projectRoot`, `options`, `guide`, `map`, `run`, `report`](../../skills/verify-work/verify.mjs) | Local command dispatch, project discovery, option parsing, guide/map reference checks, run identity, signal handling, incremental `result.json` writes, `.groundwork/latest`, and report presentation. |
 | [lib/layout.mjs — `initializeLayout`, `groundworkPath`, `runtimeExclusions`](../../lib/layout.mjs) | Canonical storage paths, preservation/migration of legacy files, and the shared list of runtime paths excluded from source matching. |
 | [lib/config.mjs — `configPath`, `parseConfig`, `catalogue`, `selectChecks`, `catalogueIssues`](../../lib/config.mjs) | Configuration validation/defaults, catalogue/check relationships, selection reasons and gaps, and guide file/anchor validation. Normalized configuration lives in memory for the invocation. |
+| [lib/map.mjs — `renderMap`](../../lib/map.mjs) | Behaviour lookup and ASCII rendering of direct dependencies, derived consumers and feature metadata. Returns displayed IDs for guide validation; does not execute checks or write files. |
 | [lib/model.mjs — `validatePlan`, `withInvariants`, `coverage`, `assess`, `capture`, `refreshEvidence`](../../lib/model.mjs) | Frozen requirement objects, invariant requirements, evidence validity/hashes, comparison/measurement assessment, and status rules. Assessment derives coverage; it does not determine whether a project's assertion actually proves the prose expectation. |
 | [lib/runner.mjs — `source`, `changedFiles`, `executeCommand`, `trial`, `runChecks`](../../lib/runner.mjs) | Git source snapshots, Bash child processes, per-trial lifecycle/evidence, optional baseline worktree lifetime, repeated outcomes, and progress callbacks. Drivers own application state, isolation, and assertions. |
 | [pr-verification/scripts/verify.mjs](../../pr-verification/scripts/verify.mjs) | Separate PR orchestration around the same config, runner, and model; owns PR context, planning/agent stages, and its report envelope. |
@@ -32,6 +33,7 @@ Existing journeys remain in the guide: [Adopt a project](../VERIFY.md#adopt-a-pr
 ```text
 cwd → projectRoot → loadConfig
                     ├─ view guide → catalogue → guide-reference issues
+                    ├─ map → declared feature relationships → ASCII view + guide issues
                     └─ verify → changedFiles? → selectChecks
                          → task plan + active invariants → initial result + latest
                          → runChecks → trial logs/artifacts/observations
@@ -41,15 +43,15 @@ latest → saved result → source check + refreshEvidence → assess → displa
 
 ### Project discovery
 
-`projectRoot()` starts at the invocation directory, except that a path inside `.groundwork/` starts above its last `.groundwork` component. It walks upward to the first configuration, checking each directory before stopping at a `.git` boundary or filesystem root. Thus `.groundwork/config/verify.json` is not accidentally treated as the adopted project's configuration when invoked there ([skills/verify-work/verify.mjs, lines 74–85](../../skills/verify-work/verify.mjs)).
+`projectRoot()` starts at the invocation directory, except that a path inside `.groundwork/` starts above its last `.groundwork` component. It walks upward to the first configuration, checking each directory before stopping at a `.git` boundary or filesystem root. Thus `.groundwork/config/verify.json` is not accidentally treated as the adopted project's configuration when invoked there ([skills/verify-work/verify.mjs — `projectRoot`](../../skills/verify-work/verify.mjs)).
 
-`configPath(root)` prefers `.groundwork/verify.json`; root `verify.json` is a fallback only when the canonical path is absent. An invalid canonical file or dangling symlink does not trigger legacy fallback ([lib/config.mjs — `configPath`, `loadConfig`](../../lib/config.mjs); [test/config.test.mjs, lines 197–219](../../test/config.test.mjs)). `init` uses its explicit directory/current directory rather than this upward discovery. It creates missing guide/configuration files and preserves or migrates existing content through `initializeLayout`; the initial empty `checks` object is not an executable verification scenario.
+`configPath(root)` prefers `.groundwork/verify.json`; root `verify.json` is a fallback only when the canonical path is absent. An invalid canonical file or dangling symlink does not trigger legacy fallback ([lib/config.mjs — `configPath`, `loadConfig`](../../lib/config.mjs); [test/config.test.mjs — namespaced configuration precedence](../../test/config.test.mjs)). `init` uses its explicit directory/current directory rather than this upward discovery. It creates missing guide/configuration files and preserves or migrates existing content through `initializeLayout`; the initial empty `checks` object is not an executable verification scenario.
 
-`verify` and `view report` require Git for `source()`. Guide inspection itself does not. Check commands execute from the discovered project root, but a local `--plan` input is resolved against the **invocation cwd** with `resolve(requested.plan)` ([skills/verify-work/verify.mjs — `run`, line 175](../../skills/verify-work/verify.mjs)).
+`verify` and `view report` require Git for `source()`. Guide and terminal-map inspection do not. Check commands execute from the discovered project root, but a local `--plan` input is resolved against the **invocation cwd** with `resolve(requested.plan)` ([skills/verify-work/verify.mjs — `run`](../../skills/verify-work/verify.mjs)).
 
 ### Catalogue and selection
 
-`parseConfig` rejects unknown fields and invalid references, supplies check defaults, and adds each invariant's ID to its enforcing checks' `covers`. Behaviours may have no checks; configured invariants must name existing checks. See [lib/config.mjs, lines 95–140](../../lib/config.mjs) and the [configuration reference](../../skills/verify-work/references/verification.md#project-configuration).
+`parseConfig` rejects unknown fields and invalid references, supplies check defaults, and adds each invariant's ID to its enforcing checks' `covers`. Behaviours may have no checks; configured invariants must name existing checks. Optional behaviour `dependsOn` lists record direct dependencies on other behaviours; they do not change selection or check bindings. See [lib/config.mjs — `parseConfig`](../../lib/config.mjs) and the [configuration reference](../../skills/verify-work/references/verification.md#project-configuration).
 
 `view guide [query]` searches IDs, descriptions, paths, and behaviour entrypoints case-insensitively. It prints matching entries and checks, then validates those entries' `guide` files/anchors. It executes no check command. Validation checks a safe project-relative Markdown target, including realpath containment and headings/explicit anchors; it does **not** recursively check Markdown links or establish the map's factual accuracy ([lib/config.mjs — `catalogue`, `markdownAnchors`, `catalogueIssues`](../../lib/config.mjs); [CLI — `guide`](../../skills/verify-work/verify.mjs)).
 
@@ -60,15 +62,23 @@ For execution, `selectChecks` unions these reasons, preserving configuration che
 3. With `--changed`, direct check-path matches and matches against covered catalogue paths. Checks without direct or covered catalogue scope remain conservative selections.
 4. Checks covering active invariants. Without `--changed`, all invariants are active even for a named run. With it, unscoped invariants remain active and scoped invariants activate on matching paths.
 
-`changedFiles(root, ref)` resolves a commit and compares it to the working tree, also including non-ignored untracked files. Runtime paths are excluded; selection patterns use `node:path.matchesGlob`. This selects work; it does not perform the separate `--base` comparison. Returned `reasons`, `omitted`, `invariants`, `unmappedPaths`, and `uncoveredBehaviours` are retained in the report. Unmapped paths and uncovered behaviours are planning signals, not automatic failure conditions ([lib/config.mjs — `selectChecks`, lines 161–196](../../lib/config.mjs); [lib/runner.mjs — `changedFiles`](../../lib/runner.mjs)).
+`changedFiles(root, ref)` resolves a commit and compares it to the working tree, also including non-ignored untracked files. Runtime paths are excluded; selection patterns use `node:path.matchesGlob`. This selects work; it does not perform the separate `--base` comparison. Returned `reasons`, `omitted`, `invariants`, `unmappedPaths`, and `uncoveredBehaviours` are retained in the report. Unmapped paths and uncovered behaviours are planning signals, not automatic failure conditions ([lib/config.mjs — `selectChecks`](../../lib/config.mjs); [lib/runner.mjs — `changedFiles`](../../lib/runner.mjs)).
 
-**A local task plan does not schedule its checks.** Selection happens before `validatePlan` and `withInvariants`. A plan-bound check omitted by selection leaves required coverage unverified. Stale catalogue references relevant to selected checks/active invariants enter assessment as problems; commands can still run, but a passing claim cannot result while those problems remain ([CLI — `run`, lines 169–184](../../skills/verify-work/verify.mjs)).
+**A local task plan does not schedule its checks.** Selection happens before `validatePlan` and `withInvariants`. A plan-bound check omitted by selection leaves required coverage unverified. Stale catalogue references relevant to selected checks/active invariants enter assessment as problems; commands can still run, but a passing claim cannot result while those problems remain ([CLI — `run`](../../skills/verify-work/verify.mjs)).
+
+### Terminal feature maps
+
+The CLI's `map` command loads the same configuration and passes it to [lib/map.mjs — `renderMap`](../../lib/map.mjs). Without a query it displays all behaviour nodes and their recorded direct outgoing edges. A focused query prefers an exact ID, then requires a unique case-insensitive ID/description match. It displays the focus, its direct dependencies and its direct consumers; it does not expand transitively. Cycles therefore remain finite.
+
+Edges come only from behaviour `dependsOn` lists. The renderer uses `catalogue` for descriptions, source/check/guide metadata, and derives consumers by reversing declared edges. Missing links and metadata are labelled as unrecorded/unmapped. Shared paths or covering checks are not dependency evidence. Navigation does not change verification selection, coverage or invariant enforcement.
+
+The CLI validates guides for the displayed IDs with `catalogueIssues` after printing the diagram. A stale guide leaves the diagram visible and returns exit `2`; ambiguous/unknown queries and flags also return `2`. An empty overview returns explanatory guidance and exit `0`. Neither overview nor focused navigation runs a check, initializes a project, or changes `.groundwork/latest` ([CLI — `map`](../../skills/verify-work/verify.mjs); [test/verify.test.mjs — feature-map scenarios](../../test/verify.test.mjs)).
 
 ### Plan and run snapshot
 
 `validatePlan` freezes the goal and requirement bindings. `withInvariants` appends required `invariant:<id>` entries and rejects collisions with those active invariant requirement IDs. It can create a plan consisting only of invariants when no task plan was supplied ([lib/model.mjs, lines 41–67](../../lib/model.mjs)).
 
-Once validation and initial source capture succeed, `run` creates a version-2 result under `.groundwork/runs/<timestamp_uuid>/result.json` with pending checks and `finishedAt: null`, then updates `.groundwork/latest` **before execution**. `runChecks` saves `plan.json`, exposes it to drivers, detects changes/removal during execution, and restores the original snapshot. Its callback saves after each aggregated check, including the retained trials; this is not a per-trial transactional checkpoint ([CLI — `run`, lines 178–213](../../skills/verify-work/verify.mjs); [lib/runner.mjs — `runChecks`, lines 184–259](../../lib/runner.mjs)).
+Once validation and initial source capture succeed, `run` creates a version-2 result under `.groundwork/runs/<timestamp_uuid>/result.json` with pending checks and `finishedAt: null`, then updates `.groundwork/latest` **before execution**. `runChecks` saves `plan.json`, exposes it to drivers, detects changes/removal during execution, and restores the original snapshot. Its callback saves after each aggregated check, including the retained trials; this is not a per-trial transactional checkpoint ([CLI — `run`](../../skills/verify-work/verify.mjs); [lib/runner.mjs — `runChecks`, lines 184–259](../../lib/runner.mjs)).
 
 An interrupted initialized run supersedes the previous latest run and remains unfinished. Errors before initialization—such as invalid options, configuration, selection, or plan—return exit `2` without creating a new latest report. These are distinct paths.
 
@@ -84,7 +94,7 @@ For `--base`, at least one selected check must declare `compare`. A temporary de
 
 ### Saved report reassessment
 
-`report()` chooses `.groundwork/latest`, falling back to `.verify/latest` only when the canonical pointer is absent. It validates the saved version-1 or version-2 report, flags unfinished runs and changed source, rechecks retained logs/artifacts/observations with `refreshEvidence`, then calls `assess`. It prints this reassessment and returns its exit code; it does not rewrite the saved result or rerun commands ([CLI — `validateReport`, `report`, lines 87–136](../../skills/verify-work/verify.mjs)).
+`report()` chooses `.groundwork/latest`, falling back to `.verify/latest` only when the canonical pointer is absent. It validates the saved version-1 or version-2 report, flags unfinished runs and changed source, rechecks retained logs/artifacts/observations with `refreshEvidence`, then calls `assess`. It prints this reassessment and returns its exit code; it does not rewrite the saved result or rerun commands ([CLI — `validateReport`, `report`](../../skills/verify-work/verify.mjs)).
 
 Coverage links requirements to explicitly bound checks, catalogue coverage, and evidence-backed observations. Missing explicit checks or required behaviour coverage stays **unverified**. Overall status is **passed / 0** only when checks, observations, required coverage, and problems allow it; **failed / 1** takes priority when a failure remains recorded; otherwise status is **inconclusive / 2**. Thus source/evidence staleness prevents reuse of a success, but does not erase a recorded check failure ([lib/model.mjs — `statusOf`, `coverage`, `assess`, `refreshEvidence`, `exitCode`](../../lib/model.mjs)).
 
@@ -97,6 +107,20 @@ The [PR wrapper](../../pr-verification/scripts/verify.mjs) supplies an explicit 
 - PR output defaults to the selected project's `.groundwork/runs/pr-<uuid>/`; the reusable workflow overrides it with runner-temporary storage. PR `result.json` is a separate envelope with a nested `verification` assessment. It does **not** update local `.groundwork/latest` or use the CLI report format ([wrapper, lines 11–30](../../pr-verification/scripts/verify.mjs); [.github/workflows/verify.yml — verification output and evidence upload](../../.github/workflows/verify.yml)).
 
 Continue with [Final PR verification](../VERIFY.md#final-pr-verification) for that journey.
+
+## Feature relationships
+
+The `pr-verification` catalogue behaviour declares direct dependencies on three existing capabilities. The [PR wrapper](../../pr-verification/scripts/verify.mjs) provides source evidence for each connection:
+
+| Depends on | Source basis |
+| --- | --- |
+| `catalogue` | Loads project configuration, calls `selectChecks`, and validates catalogue references before execution. |
+| `coverage` | Builds invariant requirements with `withInvariants` and assesses requirement coverage with `assess`. |
+| `drivers` | Executes configured checks through the shared `runChecks` lifecycle. |
+
+The `feature-map` capability also depends directly on `catalogue`: [renderMap](../../lib/map.mjs) reads the normalized behaviour catalogue to produce its graph and verification pointers. This relationship is recorded separately from the PR wrapper's dependencies.
+
+`groundwork map pr-verification` displays the PR dependencies; `groundwork map catalogue` derives both PR verification and feature-map navigation as incoming consumers. The common `tests` check does not create edges between unrelated behaviours. Other catalogue entries currently have no recorded dependencies; this is not a claim that they are independent.
 
 ## Constraints and change impact
 
@@ -112,18 +136,19 @@ The current catalogue has one required check, **`tests`**, running `bun test`; i
 
 | Behaviour or constraint | Existing journey / assertion source | Check ID | What it asserts / remaining gap |
 | --- | --- | --- | --- |
-| Discovery, canonical precedence, project-root commands, legacy reports | [Adoption journey](../VERIFY.md#adopt-a-project); [test/config.test.mjs, lines 197–219](../../test/config.test.mjs); [test/verify.test.mjs, lines 286–324](../../test/verify.test.mjs) | `tests` | Canonical config wins; nested and `.groundwork/` invocation uses project-root commands; legacy latest remains readable until replaced. The read-only observation below exercises only this repository's guide lookup. |
-| Catalogue, changed/named selection, active invariants | [Selection journey](../VERIFY.md#plan-and-select-verification); [test/config.test.mjs, lines 28–173](../../test/config.test.mjs); [test/runner.test.mjs, lines 127–175](../../test/runner.test.mjs) | `tests` | Selection unions, scoped/global invariants, unmapped signals, guide search, stale anchors/files, and symlink containment. Link validation does not establish a map's source accuracy. |
+| Discovery, canonical precedence, project-root commands, legacy reports | [Adoption journey](../VERIFY.md#adopt-a-project); [test/config.test.mjs — configuration precedence](../../test/config.test.mjs); [test/verify.test.mjs — nested invocation and legacy reports](../../test/verify.test.mjs) | `tests` | Canonical config wins; nested and `.groundwork/` invocation uses project-root commands; legacy latest remains readable until replaced. The read-only observation below exercises only this repository's guide lookup. |
+| Catalogue, changed/named selection, active invariants | [Selection journey](../VERIFY.md#plan-and-select-verification); [test/config.test.mjs — selection and guide-reference assertions](../../test/config.test.mjs); [test/runner.test.mjs, lines 127–175](../../test/runner.test.mjs) | `tests` | Selection unions, scoped/global invariants, unmapped signals, guide search, stale anchors/files, and symlink containment. Link validation does not establish a map's source accuracy. |
+| Terminal feature relationships and read-only navigation | [Map journey](../VERIFY.md#inspect-feature-relationships); [test/config.test.mjs — dependency contracts](../../test/config.test.mjs); [test/verify.test.mjs — feature-map scenarios](../../test/verify.test.mjs); [test/package.test.mjs — packaged CLI invocation](../../test/package.test.mjs) | `tests` | Direct edge direction, metadata, queries, cycles, empty/legacy/nested configurations and stale guides; no check execution or run-pointer mutation. Dependencies preserve existing selection semantics. Tests validate rendering of declared relationships, not their accuracy against an arbitrary application's source. |
 | Requirement coverage and frozen plans | [test/runner.test.mjs, lines 78–125](../../test/runner.test.mjs) | `tests` | Missing outcomes and partial multi-behaviour coverage remain unverified; a driver cannot shrink the plan; invalid requirements stop execution. |
 | Lifecycle, repetition, comparisons, trial evidence isolation | [Driver journey](../VERIFY.md#exercise-a-driver-and-compare-revisions); [test/runner.test.mjs, lines 204–358](../../test/runner.test.mjs) | `tests` | Real local HTTP observation/cleanup, retained mixed outcomes, baseline/candidate targeting, worktree removal, unavailable or nonreproducing baseline, measurement regression/context mismatch, and evidence aliases. No current runtime observation from this task. |
-| Saved success cannot conceal missing/stale evidence or interruption | [Evidence journey](../VERIFY.md#verify-a-behaviour-and-review-evidence); [test/verify.test.mjs, lines 240–284 and 326–411](../../test/verify.test.mjs); [test/runner.test.mjs, lines 324–371](../../test/runner.test.mjs) | `tests` | Fail/fix evidence retention, source/runtime exclusions, missing or altered evidence, unfinished latest, and version-1 compatibility. The interruption assertion checks latest/report status, not lifecycle cleanup after cancellation. |
+| Saved success cannot conceal missing/stale evidence or interruption | [Evidence journey](../VERIFY.md#verify-a-behaviour-and-review-evidence); [test/verify.test.mjs — persistence, freshness and interruption assertions](../../test/verify.test.mjs); [test/runner.test.mjs, lines 324–371](../../test/runner.test.mjs) | `tests` | Fail/fix evidence retention, source/runtime exclusions, missing or altered evidence, unfinished latest, and version-1 compatibility. The interruption assertion checks latest/report status, not lifecycle cleanup after cancellation. |
 | PR consumption of shared config/assessment | [PR journey](../VERIFY.md#final-pr-verification); [pr-verification/test/verification.test.mjs, lines 96–187 and 204–225](../../pr-verification/test/verification.test.mjs) | `tests` | Failed checks survive positive agent reports, incomplete plans remain incomplete, canonical/legacy catalogue input enforces an invariant, nested project output/cwd works, and missing evidence/source changes block success. These fixtures use a fake Copilot executable, not live agent verification. |
 
 The package assertion also discovers bundled skills and reads their direct Markdown references, so the new `explore` skill/template participates when packaged ([test/package.test.mjs, lines 19–36](../../test/package.test.mjs)). It does not assert the factual contents of project maps or recursively validate their links.
 
 ## Runtime observations
 
-**Runtime observed — initial mapping pass, 2026-10-11:** macOS, Bun `1.3.14`, revision and documentation changes identified above, before the catalogue-link edit. From the project's `.groundwork/` directory, this read-only command completed successfully:
+**Runtime observed — initial mapping pass, 2026-10-11:** macOS, Bun `1.3.14`, revision `3cacfb17f5037e29e9965204e91a2d7b58871b0c` with the initial exploration-guidance edits, before the catalogue-link and terminal-map changes. From the project's `.groundwork/` directory, this read-only command completed successfully:
 
 ```sh
 bun ../skills/verify-work/verify.mjs view guide catalogue
@@ -141,7 +166,7 @@ catalogue (behaviour) — Discover behaviours and enforce applicable project inv
 
 This observed discovery from `.groundwork/`, loading of the real catalogue, and resolution of its then-current guide anchor. It did not exercise check selection/execution, write a run, or refresh saved evidence. The catalogue now links to this map; rerun the command to inspect its current target.
 
-**Document validation — same environment/date:** a read-only Bun script checked the map's 24 unique Markdown link targets with filesystem inspection and `lib/config.mjs`'s `parseConfig`/`catalogueIssues` for Markdown anchors. It also validated the proposed `catalogue` guide `.groundwork/maps/verification.md#catalogue-and-selection` using an in-memory configuration change. Result: `uniqueLinksChecked: 24`, `problems: []`; no configuration file was edited. This is link validation, not execution evidence for the mapped behaviours.
+**Document validation — initial mapping pass, same environment/date:** a read-only Bun script checked the original map's 24 unique Markdown link targets with filesystem inspection and `lib/config.mjs`'s `parseConfig`/`catalogueIssues` for Markdown anchors. It also validated the proposed `catalogue` guide `.groundwork/maps/verification.md#catalogue-and-selection` using an in-memory configuration change. Result: `uniqueLinksChecked: 24`, `problems: []`; no configuration file was edited. This is historical link validation, not execution evidence for the mapped behaviours or validation of later map edits.
 
 ## Unknowns and refresh triggers
 

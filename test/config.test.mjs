@@ -131,6 +131,81 @@ test("catalogue searches descriptions, IDs, paths, and entry points and merges i
   expect(catalogue(config, "no match")).toEqual([]);
 });
 
+test("behaviour dependencies default to empty, preserve declared order, and allow forward references and cycles", () => {
+  const value = {
+    checks: {},
+    behaviours: {
+      saving: { description: "Save a document", dependsOn: ["storage", "session", "storage"] },
+      storage: { description: "Store a document", dependsOn: ["saving"] },
+      session: { description: "Identify the workspace", dependsOn: [] },
+      importing: { description: "Import a document" },
+      own: { description: "Use an explicitly declared ID", dependsOn: ["constructor"] },
+      constructor: { description: "An own catalogue entry" },
+    },
+  };
+  const config = parseConfig(value);
+  expect(config.behaviours.saving.dependsOn).toEqual(["storage", "session"]);
+  expect(config.behaviours.storage.dependsOn).toEqual(["saving"]);
+  expect(config.behaviours.session.dependsOn).toEqual([]);
+  expect(config.behaviours.importing.dependsOn).toEqual([]);
+  expect(config.behaviours.own.dependsOn).toEqual(["constructor"]);
+  expect(catalogue(config, "saving")[0].dependsOn).toEqual(["storage", "session"]);
+  expect(parseConfig(config)).toEqual(config);
+  expect(value.behaviours.saving.dependsOn).toEqual(["storage", "session", "storage"]);
+});
+
+test("behaviour dependencies reject malformed lists, self-links, and targets outside the behaviour catalogue", () => {
+  const value = {
+    checks: { integrity: check() },
+    behaviours: { saving: { description: "Save a document" }, storage: { description: "Store a document" } },
+    invariants: { durable: { description: "Stored data survives", checks: ["integrity"] } },
+  };
+  for (const dependsOn of [null, "storage", {}, [null], [42], [""], [" "], ["storage", false]]) {
+    expect(() => parseConfig({ ...value, behaviours: {
+      ...value.behaviours, saving: { ...value.behaviours.saving, dependsOn },
+    } })).toThrow("dependsOn must be an array of nonempty behaviour IDs");
+  }
+  for (const target of ["missing", "durable", "constructor", "Storage"]) {
+    expect(() => parseConfig({ ...value, behaviours: {
+      ...value.behaviours, saving: { ...value.behaviours.saving, dependsOn: [target] },
+    } })).toThrow(`saving.dependsOn: unknown behaviour reference: ${target}`);
+  }
+  expect(() => parseConfig({ ...value, behaviours: {
+    saving: { ...value.behaviours.saving, dependsOn: ["saving"] },
+  } })).toThrow("saving.dependsOn cannot reference itself");
+  expect(() => parseConfig({ ...value, invariants: {
+    durable: { ...value.invariants.durable, dependsOn: ["storage"] },
+  } })).toThrow('unknown field "dependsOn"');
+});
+
+test("dependency metadata does not change check selection, invariant enforcement, or unmapped coverage", () => {
+  const value = {
+    checks: {
+      editor: check({ covers: ["editing"] }),
+      storage: check({ covers: ["storage"] }),
+      integrity: check(),
+    },
+    behaviours: {
+      editing: { description: "Edit a document", paths: ["src/editor/**"] },
+      storage: { description: "Store a document", paths: ["src/storage/**"] },
+      planned: { description: "Import a document", paths: ["src/import/**"] },
+    },
+    invariants: { durable: { description: "Stored data survives", checks: ["integrity"] } },
+  };
+  const config = parseConfig(value);
+  const linked = parseConfig({ ...value, behaviours: {
+    ...value.behaviours,
+    editing: { ...value.behaviours.editing, dependsOn: ["storage"] },
+    planned: { ...value.behaviours.planned, dependsOn: ["editing"] },
+  } });
+  for (const options of [{}, { names: ["editor"] }, { changedPaths: [] },
+    { changedPaths: ["src/editor/view.mjs"] }, { changedPaths: ["src/storage/model.mjs"] },
+    { changedPaths: ["src/import/read.mjs"] }, { changedPaths: ["notes.txt"] }]) {
+    expect(selectChecks(linked, options)).toEqual(selectChecks(config, options));
+  }
+  expect(selectChecks(linked, { changedPaths: ["src/editor/view.mjs"] }).names).toEqual(["editor", "integrity"]);
+});
+
 test("guide inspection finds stale files and anchors without executing checks and supports scoped inspection", () => {
   const root = temporaryDirectory();
   write(root, "docs/guide.md", [

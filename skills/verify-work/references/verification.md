@@ -98,7 +98,7 @@ Artifact and result paths must stay relative, with no absolute path, backslash, 
 
 Behaviour and invariant IDs use the same characters as requirement IDs and are unique across both maps.
 
-- A **behaviour** has a nonempty `description`, optional `paths`, an optional string `entry`, and an optional `guide`. Checks link to it through `covers`. It may initially have no check; the catalogue shows that gap.
+- A **behaviour** has a nonempty `description`, optional `paths`, an optional string `entry`, an optional `guide`, and optional `dependsOn`. Checks link to it through `covers`. It may initially have no check; the catalogue shows that gap.
 - An **invariant** has a nonempty `description`, optional `paths` and `guide`, and a nonempty `checks` array referencing existing checks. Those checks also cover the invariant automatically.
 - `guide` is a safe project-relative `.md` or `.markdown` file, optionally followed by `#anchor`. Headings and explicit anchor IDs are supported; stale files and anchors are reported.
 
@@ -107,6 +107,21 @@ Use the `explore` skill to establish the entry points, ownership, affected paths
 Map Markdown links are relative to the map file; catalogue paths remain project-root-relative. Recheck affected map claims against current source when using or updating them. The CLI validates linked files and anchors, not the factual accuracy of the map's contents.
 
 Find entries with `groundwork view guide [query]`. Search matches IDs, descriptions, paths, and entry points without running any check command.
+
+### Terminal feature maps
+
+`dependsOn` is an array of other existing behaviour IDs, recording direct feature dependencies. It defaults to `[]`; duplicates are removed. Unknown references, invariant IDs and self-links are rejected. Multi-feature cycles are allowed. Record only connections supported by source or documented contracts, with their evidence in the narrative map. Shared paths or covering checks alone do not establish a dependency.
+
+```text
+groundwork map             # All features and recorded direct dependencies
+groundwork map <feature>   # Direct dependencies, consumers and feature context
+```
+
+An exact behaviour ID wins; otherwise the query must uniquely match an ID or description case-insensitively. Multiple words can be quoted or passed as separate arguments. Ambiguous or unknown queries and unsupported flags return exit `2`. An empty catalogue without a query prints setup guidance and returns `0`.
+
+The focused view includes the displayed features' descriptions, entry points, implementation paths, covering checks and guides. Reverse consumers come from other behaviours' `dependsOn` lists. The diagram shows direct relationships, so cycles remain finite. Missing metadata is reported as not recorded or not mapped. These are catalogue views, not verification results; neither command executes checks or writes run files. Guide references for displayed behaviours are validated; stale links retain the diagram and return exit `2`.
+
+Dependency metadata does not change check selection, invariant activation, requirement coverage, or local plan scheduling. Use the map to investigate impact, then select checks whose actual assertions establish the affected requirements.
 
 ## Selecting checks
 

@@ -4,7 +4,7 @@
       "command": "bun test",
       "expect": "The CLI and PR verification preserve setup and accurately report check results, behaviour, failures, and evidence",
       "required": true,
-      "covers": ["adoption", "coverage", "catalogue", "drivers", "pr-verification"]
+      "covers": ["adoption", "coverage", "catalogue", "feature-map", "drivers", "pr-verification"]
     }
   },
   "behaviours": {
@@ -26,6 +26,13 @@
       "entry": "groundwork view guide / groundwork verify --changed <ref>",
       "guide": ".groundwork/maps/verification.md#catalogue-and-selection"
     },
+    "feature-map": {
+      "description": "View declared feature dependencies, consumers, source paths and verification pointers",
+      "paths": ["lib/map.mjs", "test/verify.test.mjs", "test/package.test.mjs"],
+      "entry": "groundwork map [feature]",
+      "guide": ".groundwork/VERIFY.md#inspect-feature-relationships",
+      "dependsOn": ["catalogue"]
+    },
     "drivers": {
       "description": "Exercise lifecycle drivers, retain repeated trials, and compare source revisions",
       "paths": ["lib/runner.mjs", "test/runner.test.mjs"],
@@ -35,7 +42,8 @@
     "pr-verification": {
       "description": "Verify a PR against a frozen plan and report results in the importing repository",
       "paths": ["pr-verification/**", ".github/workflows/verify.yml"],
-      "guide": ".groundwork/VERIFY.md#final-pr-verification"
+      "guide": ".groundwork/VERIFY.md#final-pr-verification",
+      "dependsOn": ["catalogue", "coverage", "drivers"]
     }
   },
   "invariants": {

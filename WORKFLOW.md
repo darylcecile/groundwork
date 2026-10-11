@@ -53,6 +53,8 @@ Each adopted project supplies a small behaviour guide in `.groundwork/VERIFY.md`
 
 The `explore` skill establishes those relationships. During adoption or an explicit mapping request, retain stable findings in `.groundwork/maps/<area>.md` and link them from the guide and relevant catalogue entries. Include the inspected source, important ownership and flow relationships, constraints, verification paths, and remaining gaps. Reuse existing documentation and refresh affected maps when behaviour changes. Maps guide investigation; their source-derived claims do not substitute for exercising the behaviour.
 
+Use `groundwork map [feature]` to inspect the catalogue as an ASCII overview or focused relationship map. Source-backed direct dependencies live in each behaviour's optional `dependsOn` list; the CLI derives consumers from those links. Keep their rationale in the narrative map and use it to choose further investigation and verification.
+
 Reuse the project's existing browser tooling, test runner, API client, and development commands. When a recurring interaction needs automation, make one small project-owned driver under `.groundwork/scripts/`; put its supporting configs in `.groundwork/config/`. Keep task plans, notes, scratch files and evidence under `.groundwork/` as well. Update the behaviour guide when the feature's entry point or behaviour changes.
 
 ## The handoff

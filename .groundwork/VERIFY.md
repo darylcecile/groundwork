@@ -23,6 +23,12 @@ Use `explore` to explain a focused question such as how named checks include act
 
 The [verification flow map](maps/verification.md) connects project discovery, configuration, selection, execution, and saved reports. Recheck its source anchors before relying on it. Catalogue guide files and anchors should resolve through `groundwork view guide`; inspect other map links directly. Their factual accuracy needs source review and runtime evidence where claimed. The package test checks that the installed `explore` skill and its template are included and readable.
 
+### Inspect feature relationships
+
+Run `groundwork map` for the catalogue overview, or `groundwork map pr-verification` for its direct dependencies and source/check/guide context. `groundwork map catalogue` shows the feature-map and PR-verification capabilities as consumers. These edges are recorded in `dependsOn` and supported by the [feature relationships](maps/verification.md#feature-relationships); shared checks do not create edges. Existing features without relationships remain visible as unrecorded.
+
+The CLI tests exercise direction, empty metadata, ambiguous and missing queries, cyclic relationships, guide-reference errors, nested/legacy discovery and read-only operation. A map request must leave source and run pointers intact, even when a configured check would write a file if executed.
+
 ### Verify a behaviour and review evidence
 
 The integration test creates a small preferences CLI with broken theme persistence. Its driver sets a theme and reads it in a new process. Verification fails on the original implementation, passes after the fix, and retains both runs. A saved passing result becomes inconclusive when its source or evidence subsequently changes.

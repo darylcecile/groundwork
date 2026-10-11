@@ -16,6 +16,8 @@ This guide lives at `.groundwork/VERIFY.md`, linked from root `AGENTS.md`. Keep 
 
 Link relevant `.groundwork/maps/<area>.md` documents here using paths relative to this guide, such as `maps/<area>.md`. Use the `explore` skill to establish or refresh ownership, data flow, dependencies, constraints, change impact, and verification paths. Check the cited source before relying on an existing map. Keep journey instructions in one place and link to them; distinguish source findings from observed runtime behaviour.
 
+Record source-backed direct feature dependencies in each catalogue behaviour's optional `dependsOn` list. Inspect the resulting ASCII view with `groundwork map` or `groundwork map <feature>`; it derives consumers from those links and shows the feature's source/check/guide context. Keep dependency rationale in the narrative map. Relationship metadata does not replace check bindings or alter check selection.
+
 ## Behaviours
 
 ### First behaviour

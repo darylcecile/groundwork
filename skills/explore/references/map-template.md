@@ -34,6 +34,16 @@ to side effects and output, with source references at each meaningful boundary.
 Use a small diagram only if it clarifies the flow. Include relevant callers,
 consumers, external boundaries, and failure/cancellation paths.>
 
+## Feature relationships
+
+| Behaviour | Direct dependency | Source or documented reason |
+| --- | --- | --- |
+| <existing catalogue ID> | <other existing behaviour ID> | <evidence establishing the connection> |
+
+<Record these direct edges in the behaviour's `dependsOn` list. Consumers are
+derived from the same links. Shared paths/checks alone are not a dependency.
+Omit the table if no relationships have been established and record that gap.>
+
 ## Constraints and change impact
 
 <Record relevant invariants with evidence, consumers/shared state affected by a
@@ -101,8 +111,10 @@ Consult the installed `verify-work` reference before modifying verification file
 
 This changes navigation, not evidence. The example adds no check binding. Retain the real project's existing bindings; add a check's `covers` only after inspecting its assertions. A behaviour may have no check, shown in the map as `not mapped`. Configured invariants require a nonempty `checks` array of real enforcing check IDs. Keep unsupported constraints and gaps in prose rather than inventing checks or fields.
 
+For a feature that consumes the catalogue, a source-backed relationship could be `"dependsOn": ["catalogue"]` on that feature's behaviour entry. Every target must already be a behaviour in the active configuration; self-links and references to invariants are invalid. Record direct dependencies only, explaining each connection in the map. Leave unknown relationships unrecorded. `groundwork map` displays all recorded edges; `groundwork map <feature>` displays direct dependencies, derived consumers and feature context. Relationships are navigational and do not add verification coverage or select checks automatically.
+
 Link the map from the relevant `.groundwork/VERIFY.md` section when useful. Keep detailed journeys in their existing home; if an existing catalogue `guide` still points to the best journey, retain it and link to the map there instead of replacing useful detail.
 
 ## Refresh a map
 
-Compare the recorded revision and relevant local changes with current source. Reinspect affected claims, callers, shared contracts, and extension points; update stale facts and paths rather than merely changing the date. Recheck Markdown links, heading anchors, path patterns, catalogue IDs, and check references/assertions. Preserve unrelated custom content. Record the scope actually refreshed and any claims still awaiting inspection. Runtime observations retain their own source/context and gaps until exercised again.
+Compare the recorded revision and relevant local changes with current source. Reinspect affected claims, callers, shared contracts, and extension points; update stale facts and paths rather than merely changing the date. Recheck Markdown links, heading anchors, path patterns, catalogue IDs, dependency relationships, and check references/assertions. Inspect the ASCII view after updating relationships. Preserve unrelated custom content. Record the scope actually refreshed and any claims still awaiting inspection. Runtime observations retain their own source/context and gaps until exercised again.

@@ -355,6 +355,180 @@ test("malformed configuration is rejected before executing commands", () => {
   expect(existsSync(join(root, "executed"))).toBe(false);
 });
 
+test("feature maps show declared dependency direction and useful pointers without inferring shared-check or path links", () => {
+  const root = temporaryDirectory();
+  write(root, "docs/map.md", "# Saving\n");
+  write(root, ".groundwork/verify.json", JSON.stringify({
+    checks: { journey: { command: "printf ran > executed", expect: "Save a document", covers: ["saving", "unrelated"] } },
+    behaviours: {
+      saving: { description: "Save\nrévisions", entry: "app save\n<file>", paths: ["src/save/**", "src/shared.mjs", "src/two  spaces.mjs"], guide: "docs/map.md#saving", dependsOn: ["storage", "session"] },
+      dashboard: { description: "Save from the dashboard", dependsOn: ["saving"] },
+      command: { description: "Save from a command", dependsOn: ["saving"] },
+      session: { description: "Identify the workspace" },
+      storage: { description: "Store contents", dependsOn: ["codec"] },
+      codec: { description: "Encode contents" },
+      unrelated: { description: "Share a suite but no recorded link", paths: ["src/save/**"] },
+      isolated: { description: "No recorded links" },
+    },
+    invariants: { durable: { description: "Stored data survives", checks: ["journey"], guide: "docs/missing-invariant.md" } },
+  }));
+  const overview = invoke(root, ["map"]);
+  expect(overview.code).toBe(0);
+  expect(overview.output).toContain("Feature map: all behaviours");
+  expect(overview.output).toContain("[saving] -> [storage]");
+  expect(overview.output).toContain("[dashboard] -> [saving]");
+  expect(overview.output).toContain("[storage] -> [codec]");
+  expect(overview.output).toContain("[isolated]\n`-- Depends on (recorded): none recorded");
+  expect(overview.output.indexOf("\n[session]\n")).toBeLessThan(overview.output.indexOf("\n[storage]\n"));
+  const focused = invoke(root, ["map", "saving"]);
+  expect(focused.code).toBe(0);
+  expect(focused.output).toContain("Feature map: saving");
+  expect(focused.output).toContain("+-- Used by (recorded)\n|   +-- [dashboard] -> [saving]\n|   `-- [command] -> [saving]");
+  expect(focused.output).toContain("`-- Depends on (recorded)\n    +-- [saving] -> [storage]\n    `-- [saving] -> [session]");
+  expect(focused.output).toContain("Description: Save révisions\n  Entry: app save <file>");
+  expect(focused.output).toContain("Implementation paths: src/save/**, src/shared.mjs, src/two  spaces.mjs");
+  expect(focused.output).toContain("Covering checks: journey");
+  expect(focused.output).toContain("Narrative guide: docs/map.md#saving");
+  expect(focused.output).toContain("Recorded direct relationships; checks are listed without running them");
+  for (const id of ["unrelated", "isolated", "codec", "durable"]) expect(focused.output).not.toContain(`[${id}]`);
+  expect(existsSync(join(root, "executed"))).toBe(false);
+  expect(existsSync(join(root, ".groundwork/runs"))).toBe(false);
+  expect(existsSync(join(root, ".groundwork/latest"))).toBe(false);
+});
+
+test.each([".groundwork/verify.json", "verify.json"])("feature maps discover %s from nested directories without Git and preserve project state", configPath => {
+  const root = temporaryDirectory();
+  const config = JSON.stringify({
+    checks: { forbidden: { command: "printf ran > executed", expect: "Run only when requested", required: true, covers: ["saving"] } },
+    behaviours: { saving: { description: "Save a document", guide: "docs/map.md#saving" } },
+  });
+  write(root, configPath, config);
+  write(root, "docs/map.md", "# Saving\n");
+  write(root, ".groundwork/latest", "previous\n");
+  write(root, ".groundwork/runs/previous/result.json", "Retain this exact evidence.\n");
+  write(root, ".groundwork/config/verify.json", "Not the project config");
+  mkdirSync(join(root, "src/nested"), { recursive: true });
+  for (const cwd of ["src/nested", ".groundwork/config"]) {
+    const result = invoke(join(root, cwd), ["map", "saving"]);
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Narrative guide: docs/map.md#saving");
+  }
+  expect(readFileSync(join(root, configPath), "utf8")).toBe(config);
+  expect(readFileSync(join(root, "docs/map.md"), "utf8")).toBe("# Saving\n");
+  expect(readFileSync(join(root, ".groundwork/latest"), "utf8")).toBe("previous\n");
+  expect(readFileSync(join(root, ".groundwork/runs/previous/result.json"), "utf8")).toBe("Retain this exact evidence.\n");
+  expect(readdirSync(join(root, ".groundwork/runs"))).toEqual(["previous"]);
+  for (const path of ["executed", ".git", "AGENTS.md", ".groundwork/VERIFY.md", ".groundwork/.gitignore"]) {
+    expect(existsSync(join(root, path))).toBe(false);
+  }
+  if (configPath === "verify.json") expect(existsSync(join(root, ".groundwork/verify.json"))).toBe(false);
+});
+
+test("feature maps explain empty and unmapped catalogues without initializing a project", () => {
+  const root = temporaryDirectory();
+  expect(invoke(root, ["map"]).code).toBe(2);
+  expect(readdirSync(root)).toEqual([]);
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {} }));
+  const empty = invoke(root, ["map"]);
+  expect(empty.code).toBe(0);
+  expect(empty.output).toContain("No behaviours recorded");
+  expect(empty.output).toContain("Add behaviours to .groundwork/verify.json");
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+    planned: { description: "Import a document", entry: " \n ", paths: [] },
+  } }));
+  const unmapped = invoke(root, ["map", "planned"]);
+  expect(unmapped.code).toBe(0);
+  expect(unmapped.output).toContain("Used by (recorded): none recorded");
+  expect(unmapped.output).toContain("Depends on (recorded): none recorded");
+  expect(unmapped.output).toContain("Entry: not recorded");
+  expect(unmapped.output).toContain("Implementation paths: not mapped");
+  expect(unmapped.output).toContain("Covering checks: not mapped");
+  expect(unmapped.output).toContain("Narrative guide: not recorded");
+  expect(readdirSync(join(root, ".groundwork"))).toEqual(["verify.json"]);
+});
+
+test("feature lookup prefers exact IDs, supports unique ID or description queries, and rejects ambiguity and flags", () => {
+  const root = temporaryDirectory();
+  write(root, ".groundwork/verify.json", JSON.stringify({
+    checks: { policy: { command: "true", expect: "Release policy holds" } },
+    behaviours: {
+      save: { description: "Write a document" },
+      Save: { description: "Write an archive" },
+      "save-copy": { description: "Save a separate copy" },
+      publishing: { description: "Deploy a release", entry: "/deployment-control", paths: ["src/outbound/**"] },
+    },
+    invariants: { "release-policy": { description: "Deploy a release safely", checks: ["policy"] } },
+  }));
+  for (const id of ["save", "Save"]) {
+    const exact = invoke(root, ["map", id]);
+    expect(exact.code).toBe(0);
+    expect(exact.output).toContain(`Feature map: ${id}\n`);
+    expect(exact.output).not.toContain("[save-copy]");
+  }
+  for (const query of [["PUBLI"], ["deploy", "a", "RELEASE"]]) {
+    const unique = invoke(root, ["map", ...query]);
+    expect(unique.code).toBe(0);
+    expect(unique.output).toContain("Feature map: publishing\n");
+  }
+  const ambiguous = invoke(root, ["map", "SaVe"]);
+  expect(ambiguous.code).toBe(2);
+  expect(ambiguous.output).toContain('Ambiguous feature "SaVe"');
+  expect(ambiguous.output).toContain("Matching IDs: save, Save, save-copy");
+  for (const query of ["missing", "release-policy", "/deployment-control", "src/outbound"]) {
+    const missing = invoke(root, ["map", query]);
+    expect(missing.code).toBe(2);
+    expect(missing.output).toContain(`Unknown feature "${query}"`);
+    expect(missing.output).toContain("Run groundwork map");
+  }
+  for (const args of [["--depth", "2"], ["save", "-x"]]) {
+    const invalid = invoke(root, ["map", ...args]);
+    expect(invalid.code).toBe(2);
+    expect(invalid.output).toContain("Unknown option:");
+  }
+});
+
+test("cyclic feature maps remain finite and show both direct directions", () => {
+  const root = temporaryDirectory();
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+    first: { description: "First feature", dependsOn: ["second"] },
+    second: { description: "Second feature", dependsOn: ["first"] },
+  } }));
+  for (const args of [["map"], ["map", "first"]]) {
+    const result = invoke(root, args);
+    expect(result.code).toBe(0);
+    expect(result.output.match(/\[first\] -> \[second\]/g)).toHaveLength(1);
+    expect(result.output.match(/\[second\] -> \[first\]/g)).toHaveLength(1);
+    expect(result.output.split("\n").length).toBeLessThan(60);
+  }
+});
+
+test("feature maps retain diagrams while reporting stale guides for exactly the displayed behaviours", () => {
+  const root = temporaryDirectory();
+  write(root, "docs/map.md", "# Current\n");
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+    saving: { description: "Save a document", guide: "docs/map.md#old-save", dependsOn: ["storage"] },
+    dashboard: { description: "Save from a dashboard", guide: "docs/missing.md", dependsOn: ["saving"] },
+    storage: { description: "Store a document", guide: "docs/map.md#old-storage" },
+    unrelated: { description: "Unrelated feature", guide: "docs/map.md#old-unrelated" },
+    isolated: { description: "An unmapped feature" },
+  } }));
+  const focused = invoke(root, ["map", "saving"]);
+  expect(focused.code).toBe(2);
+  expect(focused.output).toContain("[dashboard] -> [saving]");
+  expect(focused.output).toContain("[saving] -> [storage]");
+  expect(focused.output).toContain("Narrative guide: docs/map.md#old-save");
+  expect(focused.output).toContain("saving: missing guide anchor #old-save");
+  expect(focused.output).toContain("dashboard: cannot read guide docs/missing.md");
+  expect(focused.output).toContain("storage: missing guide anchor #old-storage");
+  expect(focused.output).not.toContain("unrelated");
+  const overview = invoke(root, ["map"]);
+  expect(overview.code).toBe(2);
+  expect(overview.output).toContain("[saving] -> [storage]");
+  expect(overview.output).toContain("unrelated: missing guide anchor #old-unrelated");
+  expect(invoke(root, ["map", "isolated"]).code).toBe(0);
+  expect(existsSync(join(root, ".groundwork/latest"))).toBe(false);
+});
+
 test("missing fresh evidence cannot reuse a previous run's artifact", () => {
   const root = project({ evidence: { command: "bun -e 'require(\"node:fs\").writeFileSync(process.env.VERIFY_ARTIFACTS + \"/proof.txt\", \"observed\")'", expect: "Capture proof", artifacts: ["proof.txt"] } });
   expect(invoke(root, ["verify"]).code).toBe(0);

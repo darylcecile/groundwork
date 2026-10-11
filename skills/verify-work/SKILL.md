@@ -42,10 +42,13 @@ groundwork verify [name ...]    Run selected checks and active invariants
   --changed <ref>                Select checks using changed paths
   --base <ref>                   Compare source-aware drivers with a baseline
 groundwork view guide [query]   Discover behaviours, invariants, and checks
+groundwork map [feature]        View an ASCII feature overview or direct relationships
 groundwork view report           Inspect coverage, results, and freshness
 ```
 
 Groundwork adds required checks and active invariants. Use `--changed` to select mapped areas, and inspect unmapped changes for additional verification needs. Without names or `--changed`, it runs all configured checks.
+
+Use `groundwork map [feature]` to inspect recorded dependencies, consumers, source paths and verification links. Behaviour `dependsOn` relationships guide investigation; they do not bind checks or expand change-aware selection. Choose additional checks from the actual affected behaviour and assertions.
 
 The CLI stores each run under `.groundwork/runs/<id>/`, including the plan, results, logs, and trial artifacts. A new run becomes the latest immediately, so an interrupted attempt remains incomplete. `groundwork view report` rechecks source and evidence without rerunning commands.
 

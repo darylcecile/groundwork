@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -38,12 +38,23 @@ test("the distributed CLI installs its skills with references that resolve throu
     const help = run(process.execPath, [join(home, ".agents/skills/verify-work/verify.mjs"), "--help"], root, env);
     expect(help).toContain("groundwork verify");
     expect(help).toContain("groundwork view report");
+    expect(help).toContain("groundwork map [feature]");
     const project = join(root, "project");
     mkdirSync(project);
     run(process.execPath, [join(home, ".agents/skills/verify-work/verify.mjs"), "init"], project, env);
     expect(readdirSync(project).sort()).toEqual([".groundwork", "AGENTS.md"]);
     expect(JSON.parse(readFileSync(join(project, ".groundwork/verify.json"), "utf8"))).toEqual({ checks: {} });
     expect(readFileSync(join(project, ".groundwork/VERIFY.md"), "utf8").trim().length).toBeGreaterThan(0);
+    writeFileSync(join(project, ".groundwork/verify.json"), JSON.stringify({ checks: {}, behaviours: {
+      saving: { description: "Save a document", paths: ["src/save.mjs"], dependsOn: ["storage"] },
+      storage: { description: "Store a document" },
+    } }));
+    const map = run(process.execPath, [join(home, ".agents/skills/verify-work/verify.mjs"), "map", "saving"], project, env);
+    expect(map).toContain("Feature map: saving");
+    expect(map).toContain("[saving] -> [storage]");
+    expect(map).toContain("Implementation paths: src/save.mjs");
+    expect(existsSync(join(project, ".groundwork/runs"))).toBe(false);
+    expect(existsSync(join(project, ".groundwork/latest"))).toBe(false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

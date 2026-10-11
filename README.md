@@ -52,6 +52,17 @@ Project invariants record constraints that must keep holding, such as malformed 
 
 ## Maps
 
+Use the terminal to see where a feature fits:
+
+```sh
+groundwork map                    # Overview of recorded features and dependencies
+groundwork map theme-persistence  # Focus on one feature and its direct neighbours
+```
+
+A feature is a behaviour in the catalogue. The focused ASCII view shows what it depends on, which features use it, and the displayed features' entry points, implementation paths, covering checks and guides. Use an exact behaviour ID or a unique case-insensitive match in an ID or description; ambiguous queries list the matching IDs. The overview includes all recorded feature relationships.
+
+Relationships are stored as an optional `dependsOn` array of behaviour IDs. For example, theme persistence could depend on settings storage. `explore` records direct connections supported by source evidence and keeps the explanation in the narrative map. Consumers are derived from those same links. Missing relationships are shown as unrecorded; viewing a map is read-only and does not run verification checks.
+
 The catalogue helps locate a behaviour; maps explain how its subsystem fits together. The [`explore` skill](skills/explore/SKILL.md) traces entry points, owning modules, data and state, dependencies, constraints, relevant history and verification paths, citing sources and recording gaps. It uses existing project tools for runtime observations when needed.
 
 For a focused question, ask:
@@ -89,6 +100,7 @@ The agent uses these commands as needed:
 ```sh
 groundwork init                              # Adopt the current project
 groundwork view guide theme                  # Discover related behaviours and checks
+groundwork map theme-persistence              # View feature relationships and context
 groundwork verify                            # Run every configured check
 groundwork verify theme-persists --plan .groundwork/plans/task.json
 groundwork verify --changed main --plan .groundwork/plans/task.json

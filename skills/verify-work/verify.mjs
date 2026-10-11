@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { catalogue, catalogueIssues, configPath, loadConfig, selectChecks } from "../../lib/config.mjs";
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
 import { groundworkPath, initializeLayout, pathExists } from "../../lib/layout.mjs";
+import { renderMap } from "../../lib/map.mjs";
 import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
   validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, pendingCheck, runChecks, source } from "../../lib/runner.mjs";
@@ -30,6 +31,7 @@ const help = `groundwork — checks and evidence
     --base <ref>                   Compare source-aware drivers with a baseline
   groundwork view report          Show results, coverage, measurements, and evidence
   groundwork view guide [query]   Find behaviours, invariants, and their checks
+  groundwork map [feature]        Show recorded feature dependencies and pointers
 
 Exit codes: 0 passed, 1 failed, 2 inconclusive or invalid setup.
 `;
@@ -166,6 +168,16 @@ function guide(root, query) {
   return issues.length ? 2 : 0;
 }
 
+function map(root, args) {
+  for (const arg of args) ensure(!arg.startsWith("-"), `Unknown option: ${arg}`);
+  const config = loadConfig(root);
+  const rendered = renderMap(config, args.join(" "));
+  console.log(rendered.text);
+  const issues = catalogueIssues(config, root, rendered.ids);
+  for (const issue of issues) console.log(`  ${issue.replace(/\s+/g, " ").trim()}`);
+  return issues.length ? 2 : 0;
+}
+
 async function run(root, args) {
   const requested = options(args);
   const config = loadConfig(root);
@@ -230,6 +242,8 @@ try {
     process.exitCode = report(projectRoot());
   } else if (command === "view" && args[0] === "guide") {
     process.exitCode = guide(projectRoot(), args.slice(1).join(" "));
+  } else if (command === "map") {
+    process.exitCode = map(projectRoot(), args);
   } else {
     throw new Error(`Unknown command or arguments.\n${help}`);
   }
