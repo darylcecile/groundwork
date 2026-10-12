@@ -2,7 +2,7 @@
 
 A small personal workflow for GitHub Copilot CLI/app and OpenCode 2. Give the agent a task in normal chat. It builds an understanding of the project, records the intended outcome, makes and reviews the change, and brings back evidence for each requirement.
 
-Groundwork's skills guide exploration, implementation, judgement and verification. The `groundwork` CLI runs project-owned checks, tracks requirement coverage and retains source-aware results. Together they make the work traceable, from the original request to observations you can inspect.
+Groundwork's skills guide exploration, explanation, implementation, judgement and verification. The `groundwork` CLI runs project-owned checks, tracks requirement coverage and retains source-aware results. Together they make the work traceable, from the original request to observations you can inspect.
 
 ## Install
 
@@ -39,6 +39,10 @@ The agent explores a real journey, runs `groundwork init` and fills in two files
 - **`.groundwork/verify.json`:** named executable checks, with optional behaviour catalogue entries and enforced project invariants.
 
 Root **`AGENTS.md`** points agents to these files. Commit the guide, configuration and `.groundwork/.gitignore` with the project when ready. Existing check configurations remain valid; add catalogue entries and richer drivers as they become useful.
+
+Use the [`explain` skill](skills/explain/SKILL.md) for concise, friendly technical explanations that reduce jargon while preserving meaning.
+
+> Use explain to help me understand eventual consistency with a concrete example.
 
 Continue giving the agent tasks normally. For example: **“Make my theme selection survive restarting the application.”** The following concepts connect that request to a reviewable result.
 
