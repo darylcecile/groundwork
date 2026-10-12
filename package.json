@@ -11,7 +11,8 @@
     "groundwork": "skills/verify-work/verify.mjs"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "eval": "bun .groundwork/scripts/eval.mjs"
   },
   "files": [
     "lib",

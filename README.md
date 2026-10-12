@@ -157,6 +157,12 @@ Run `groundwork init` again to move legacy root `verify.json`, `VERIFY.md` and `
 
 The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root configuration supported when that file is absent. New runs always use `.groundwork/runs/`; the CLI can still read legacy evidence until a new run is started or it is migrated. Rerun verification after migration because the source paths have changed.
 
+## Improving the skills
+
+The repository includes a [versioned skills benchmark](.groundwork/evals/WORKFLOW.md) with 24 authored tasks, pinned model and instruction comparisons, isolated execution, independent behavioural checks, cross-family judges, and paired reports. Natural discovery and explicit skill invocation are measured separately. Anana retains benchmark history and human model-adoption decisions.
+
+Start with `bun run eval validate` and `bun run eval controls`; see the workflow for runtime setup and paid multi-model runs. Benchmark infrastructure is repository-owned development tooling, rather than part of the installed `groundwork` package.
+
 ## Further reading
 
 - [Workflow and confidence framework](WORKFLOW.md): the working loop, evidence standards and handoff.

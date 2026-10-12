@@ -4,10 +4,16 @@
       "command": "bun test",
       "expect": "The CLI and PR verification preserve setup and accurately report check results, behaviour, failures, and evidence",
       "required": true,
-      "covers": ["adoption", "coverage", "catalogue", "feature-map", "drivers", "pr-verification"]
+      "covers": ["adoption", "coverage", "catalogue", "feature-map", "drivers", "pr-verification", "skills-evaluation"]
     }
   },
   "behaviours": {
+    "skills-evaluation": {
+      "description": "Compare pinned skills and models with isolated attempts, independent grading, paired reports and Anana history",
+      "paths": [".groundwork/evals/**", ".groundwork/scripts/eval.mjs", ".groundwork/scripts/evals/**", ".groundwork/config/evals.json", "test/eval-*.test.mjs"],
+      "entry": "bun run eval prepare / run / judge / report / publish",
+      "guide": ".groundwork/VERIFY.md#evaluate-groundworks-skills"
+    },
     "adoption": {
       "description": "Adopt projects and install or update bundled skills while preserving user setup",
       "paths": ["skills/**", "lib/distribution.mjs", "lib/layout.mjs", "package.json", "test/verify.test.mjs", "test/distribution.test.mjs", "test/package.test.mjs"],

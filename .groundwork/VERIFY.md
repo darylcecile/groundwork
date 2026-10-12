@@ -59,6 +59,16 @@ Inspect the saved plan, requirement coverage, trial logs, observations, and arti
 
 The reusable workflow is `.github/workflows/verify.yml`; its runtime and prompt live in `pr-verification/`. It runs the importing project's configured checks and an agent-led pass, captures evidence, and updates the importing PR's verification comment. It discovers `.groundwork/verify.json` (with legacy fallback), and local evidence defaults to the selected project's `.groundwork/runs/pr-<id>/`. The integration tests cover failures, missing evidence, source changes, nested project paths, and comment targeting and updating.
 
+### Evaluate Groundwork's skills
+
+The versioned corpus lives in `.groundwork/evals/`, experiment settings in `.groundwork/config/evals.json`, and orchestration in `.groundwork/scripts/evals/`. [Benchmark workflow](evals/WORKFLOW.md) describes natural/explicit populations, model and skill comparisons, calibration, and Anana history. [Corpus reference](evals/README.md) identifies the authored task families and evaluator-owned checks.
+
+Run `bun run eval validate` to validate the corpus and model panel, and `bun run eval controls` to exercise known reference solutions and original defects. The project test suite covers these boundaries along with frozen inputs, no-skill isolation, missing/duplicate attempts, conservative judge aggregation, paired comparisons, and resumable Anana publication against a controlled HTTP boundary.
+
+A live run uses `bun run eval prepare`, followed by `run`, `judge`, and `report` with the printed directory. `publish` writes the reviewed report to Anana using a token supplied only to that process. Inspect raw runtime traces, resulting source, external observations and each judge's evidence. A complete report means all declared evidence is present, not that every task passed. Live model and Anana checks are explicit operations; ordinary tests do not spend model budget or require credentials.
+
+`bun run eval regrade <actor-run>` applies a separately recorded grading context to intact archived attempts without rerunning actors or overwriting earlier verdicts. Source-invalid attempts stay unscorable. Its grading directory supports `report` and `publish`; inspect both original execution identity and new grading provenance.
+
 ## Environment and evidence
 
 Requires Bun, Git, and Bash. Tests use disposable local projects and controlled integrations without network credentials. `VERIFY_TEST_TMPDIR` selects their temporary parent directory when needed. Test fixtures are removed after use; recorded run evidence remains under `.groundwork/runs/`.

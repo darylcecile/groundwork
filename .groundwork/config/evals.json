@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "suite": "groundwork-skills-v1",
+  "currentRef": "25bddafffc51a3250a326b121044a027c2fa7962",
+  "cliRef": "25bddafffc51a3250a326b121044a027c2fa7962",
+  "attempts": 3,
+  "seed": "groundwork-v1",
+  "concurrency": 2,
+  "timeoutSeconds": 600,
+  "judgeTimeoutSeconds": 300,
+  "maxJudgePacketBytes": 300000,
+  "maxTrials": 648,
+  "models": [
+    { "id": "gpt", "runtime": "copilot-cli", "version": "1.0.95", "model": "gpt-6-astra", "family": "openai", "effort": "high" },
+    { "id": "claude", "runtime": "copilot-cli", "version": "1.0.95", "model": "claude-opus-5.5", "family": "anthropic", "effort": "high" },
+    { "id": "grok", "runtime": "copilot-cli", "version": "1.0.95", "model": "grok-4.7", "family": "xai", "effort": "high" }
+  ],
+  "judges": [
+    { "id": "gpt", "runtime": "copilot-cli", "version": "1.0.95", "model": "gpt-6-astra", "family": "openai", "effort": "high" },
+    { "id": "claude", "runtime": "copilot-cli", "version": "1.0.95", "model": "claude-opus-5.5", "family": "anthropic", "effort": "high" },
+    { "id": "grok", "runtime": "copilot-cli", "version": "1.0.95", "model": "grok-4.7", "family": "xai", "effort": "high" }
+  ],
+  "anana": {
+    "origin": "https://groundwork.useanana.com",
+    "workspaceId": "7d841ac6-69bd-41f0-add5-bb5dd3a70417",
+    "databaseId": "4c15fb68-bcc5-4fdb-8ea4-03ac192b1151"
+  }
+}

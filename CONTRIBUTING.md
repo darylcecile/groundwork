@@ -14,6 +14,8 @@ For live local development, run `bun link` from this directory, then `groundwork
 
 ## Adding skills
 
+Use the [skills benchmark](.groundwork/evals/WORKFLOW.md) to compare consequential instruction changes. Keep the CLI/toolchain fixed while varying instructions; exercise the complete workflow as well as focused behaviours. `bun run eval validate` and `bun run eval controls` require no model credentials. Live `run` and `judge` commands spend model budget and retain their evidence under `.groundwork/runs/`. Anana publishing is explicit and uses environment-supplied credentials.
+
 Add `skills/<skill-name>/SKILL.md` with a matching lowercase kebab-case `name` and a description explaining when to use it. Keep its supporting references and scripts inside that directory. The package includes the whole `skills/` directory, and the installer discovers each skill automatically.
 
 Run `groundwork install` to register new skills locally. After the updated package is available, users run `groundwork update` to receive it and register the new skills. A linked development checkout uses its current source; the update command does not pull or replace local work.
