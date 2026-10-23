@@ -1,6 +1,12 @@
 ---
 name: tuna
 description: Queue a behavior note with Tuna only when the user explicitly invokes or requests it, or another skill explicitly directs it. Never activate automatically.
+argument-hint: "[note to remember]"
+disable-model-invocation: true
+user-invocable: true
+compatibility: Requires Tuna v0.2.0 or newer, a running Tuna service, and the Tuna MCP remember tool.
+metadata:
+  opencode/autoinvoke: false
 ---
 
 # Tuna
