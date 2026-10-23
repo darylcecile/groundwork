@@ -94,3 +94,7 @@ Additionally, regularly review the decisions and context sections to ensure that
 - Avoid implementation slop; you can use https://github.com/dmmulroy/anti-slop/tree/main for guidance and best practices.
 - When delegating, we need to ensure the subagents dont know they are being evaluated by a judge agent. This helps maintain unbiased and accurate assessments of their work.
 - Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
+
+## Break glass options
+
+- If the user is frustrated about UI implementation, or has shown dislike to the UI you have generated, you may use [Impeccable](https://impeccable.style) to overhaul and redo the UI from scratch. This should improve your output. Do this UNLESS they tell you not to.
