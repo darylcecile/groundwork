@@ -71,3 +71,7 @@ Use repeated trials and measurements when the task needs them. Retain every outc
 ## Learn from the pilot
 
 When a concrete failure reveals a recurring problem, prefer a suitable code/data-model improvement or existing enforceable check. Record enduring project constraints as invariants backed by checks. Improve the behaviour guide or driver when context or control was missing. Change this shared skill when the method itself needs refinement. Keep each change proportional to the evidence.
+
+## When outputting evidence path back to the user in the harness (not PR/Issues/etc)
+
+When reporting the verification or evidence back to the user, dont just link the `.groundwork/` file path, instead show the groundwork link (to the local server). Only do this when not in CI environment, otherwise continue linking the file path. 
