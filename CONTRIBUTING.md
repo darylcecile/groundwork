@@ -1,8 +1,9 @@
 # Working on Groundwork
 
-The CLI and PR verification runtime are plain JavaScript with no package dependencies or build step. Development requires Bun, Git, and Bash. Use Bun to run the tests:
+The CLI and PR verification runtime are plain JavaScript. The local portal uses Hono and React/TypeScript with Tailwind; its graph uses React Flow with Dagre layout. Development requires Bun, Git, and Bash. Install build dependencies and use Bun to run the tests:
 
 ```sh
+bun install
 bun test
 ```
 
@@ -11,6 +12,14 @@ The tests create disposable projects and exercise the real CLI, including a brok
 For the recorded project check, use `bun skills/verify-work/verify.mjs verify tests`. Finish a coherent implementation batch before running checks, then inspect the resulting evidence and requirement coverage.
 
 For live local development, run `bun link` from this directory, then `groundwork install`. The personal skill and executable point at the working copy.
+
+### Portal development
+
+Edit `portal/`, then run `bun run build:portal`. Run a Groundwork command and follow its portal URL to inspect the result. `bun run check:portal` typechecks the portal and verifies that its generated distribution matches its source.
+
+Commit `portal/dist/` with portal source changes. Its bundled server and browser assets let Git installations start immediately, without an install hook, dependency resolution or a development server at runtime. Build dependencies live in `devDependencies`; the distributed portal includes their license notices. The graph code loads on demand. The CLI loads only its small startup helper in-process.
+
+Legacy CLI test fixtures disable automatic portal startup. Portal-specific tests use isolated cache scopes, exercise shared multi-repository startup, reuse and CI suppression, and clean up their own servers.
 
 ## Adding skills
 
@@ -31,6 +40,9 @@ Keep the shared code independent of any application's stack. Put application set
 - `lib/model.mjs`: task plans, requirement coverage, observations, evidence, and measurements.
 - `lib/runner.mjs`: setup/exercise/cleanup, trials, and baseline worktrees.
 - `lib/distribution.mjs`: bundled skill discovery, registration, and package updates.
+- `lib/portal.mjs`: lightweight background portal startup and reuse.
+- `portal/`: read-only Hono API, report/catalogue adapters, file watching and React UI.
+- `portal/projects.ts`: portal-only repository registration and discovery state, stored in the user's cache.
 - `test/` and `pr-verification/test/`: project behaviour and integration checks.
 
 Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/VERIFY.md) for this repository's journeys. Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement.

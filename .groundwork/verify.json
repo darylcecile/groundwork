@@ -4,10 +4,22 @@
       "command": "bun test",
       "expect": "The CLI and PR verification preserve setup and accurately report check results, behaviour, failures, and evidence",
       "required": true,
-      "covers": ["adoption", "coverage", "catalogue", "feature-map", "drivers", "pr-verification"]
+      "covers": ["adoption", "coverage", "catalogue", "feature-map", "drivers", "pr-verification", "portal"]
+    },
+    "portal-build": {
+      "command": "bun run check:portal",
+      "expect": "The portal typechecks and its distributed server and browser assets match the source",
+      "paths": ["portal/**", "lib/**", "package.json", "bun.lock"]
     }
   },
   "behaviours": {
+    "portal": {
+      "description": "Browse saved verification reports, evidence and the behaviour catalogue in a live-updating local portal",
+      "paths": ["portal/**", "lib/portal.mjs", "test/portal.test.ts", "skills/verify-work/verify.mjs"],
+      "entry": "groundwork <command> → printed local portal URL",
+      "guide": ".groundwork/VERIFY.md#browse-the-local-portal",
+      "dependsOn": ["catalogue"]
+    },
     "adoption": {
       "description": "Adopt projects and install or update bundled skills while preserving user setup",
       "paths": ["skills/**", "lib/distribution.mjs", "lib/layout.mjs", "package.json", "test/verify.test.mjs", "test/distribution.test.mjs", "test/package.test.mjs"],

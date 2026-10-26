@@ -28,7 +28,7 @@ function write(root, path, content) {
 }
 
 function invoke(root, args, env = {}) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, ...env } });
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, GROUNDWORK_PORTAL: "0", ...env } });
   return { code: result.status, output: result.stdout + result.stderr };
 }
 
@@ -571,7 +571,7 @@ test("an interrupted attempt replaces an earlier success with an incomplete late
   expect(invoke(root, ["verify"]).code).toBe(0);
   const previous = saved(root);
   setChecks(root, { check: { command: "bun -e 'console.log(\"READY\"); setTimeout(() => {}, 200)'", expect: "Complete the check" } });
-  const child = spawn(process.execPath, [cli, "verify"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [cli, "verify"], { cwd: root, env: { ...process.env, GROUNDWORK_PORTAL: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", chunk => {
     output += chunk;

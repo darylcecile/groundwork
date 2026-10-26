@@ -11,12 +11,29 @@
     "groundwork": "skills/verify-work/verify.mjs"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "build:portal": "bun portal/build.ts",
+    "check:portal": "tsc -p portal/tsconfig.json && bun portal/build.ts --check"
   },
   "files": [
     "lib",
     "skills",
+    "portal/dist",
     "README.md",
     "WORKFLOW.md"
-  ]
+  ],
+  "devDependencies": {
+    "@dagrejs/dagre": "^3.1.3",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/bun": "^1.4.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@xyflow/react": "^12.12.0",
+    "hono": "^4.13.14",
+    "marked": "^18.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  }
 }

@@ -10,6 +10,7 @@ import { catalogue, catalogueIssues, configPath, loadConfig, selectChecks } from
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
 import { groundworkPath, initializeLayout, pathExists } from "../../lib/layout.mjs";
 import { renderMap } from "../../lib/map.mjs";
+import { ensurePortal } from "../../lib/portal.mjs";
 import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
   validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, pendingCheck, runChecks, source } from "../../lib/runner.mjs";
@@ -228,11 +229,16 @@ async function run(root, args) {
 
 try {
   const [command, ...args] = process.argv.slice(2);
+  let portalRoot = process.cwd();
+  if (command === "init") portalRoot = resolve(args[0] || portalRoot);
+  else { try { portalRoot = projectRoot(); } catch { /* An unadopted directory has an empty portal. */ } }
+  await ensurePortal(portalRoot);
   if (!command || ["help", "--help", "-h"].includes(command)) {
     console.log(help);
   } else if (command === "install" && args.length === 0) {
     install();
   } else if (command === "update" && args.length === 0) {
+    process.env.GROUNDWORK_PORTAL = "0"; // The nested installer runs from home; keep this invocation's project portal.
     updatePackage(packageRoot);
   } else if (command === "init" && args.length <= 1) {
     init(args[0]);

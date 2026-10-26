@@ -21,7 +21,7 @@ function fixture() {
   const home = join(root, "home");
   mkdirSync(home);
   const env = {
-    ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), COPILOT_HOME: join(home, ".copilot"),
+    ...process.env, GROUNDWORK_PORTAL: "0", HOME: home, XDG_CONFIG_HOME: join(home, ".config"), COPILOT_HOME: join(home, ".copilot"),
     BUN_INSTALL: join(root, "bun"), BUN_INSTALL_GLOBAL_DIR: join(root, "global"), BUN_INSTALL_BIN: join(root, "bin"),
     PATH: `${join(root, "bin")}:${process.env.PATH}`,
     GIT_CONFIG_GLOBAL: join(root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1",
@@ -43,7 +43,7 @@ function fixture() {
 function bundle(root, name = "bundle") {
   const directory = join(root, name);
   mkdirSync(directory, { recursive: true });
-  for (const path of ["package.json", "lib", "skills"]) cpSync(join(repository, path), join(directory, path), { recursive: true });
+  for (const path of ["package.json", "lib", "skills", "portal/dist"]) cpSync(join(repository, path), join(directory, path), { recursive: true });
   return directory;
 }
 

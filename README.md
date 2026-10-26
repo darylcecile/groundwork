@@ -123,6 +123,25 @@ Runs retain any plan snapshot, results, logs, observations, measurements and tri
 
 The agent can also run `bun <skill-directory>/verify.mjs` from the project when `groundwork` is unavailable on its PATH. See the [verification reference](skills/verify-work/references/verification.md) for plan/configuration examples, driver results and the comparison contract, and the [playbooks](skills/verify-work/playbooks.md) for choosing relevant cases.
 
+## Local portal
+
+Run any `groundwork` command outside CI and open the **Portal** URL printed in the terminal. One small background server handles all your repositories. Each command registers its project and prints a link to that project's view on the shared server. It listens on `127.0.0.1`; the browser opens only when you follow the link. Set `GROUNDWORK_PORTAL=0` to disable automatic startup.
+
+Use the project selector in the top bar to switch repositories. The portal remembers registered project paths under `$XDG_CACHE_HOME/groundwork/portal` (default `~/.cache/groundwork/portal`), separately from verification data. Project-specific URLs can be bookmarked.
+
+The server exits after 30 minutes without an open portal or recent requests. The next CLI command starts it again with the registered projects available; an updated server build replaces the shared daemon automatically.
+
+The portal reads the project's existing files:
+
+- **Reports:** browse run history, check results, requirement outcomes, observations, trials and comparisons.
+- **Evidence:** open logs, images, recordings and structured evidence in a preview modal without losing your place. HTML renders as a saved-page preview; originals remain downloadable.
+- **Catalogue:** explore behaviours, enforcing invariants, check bindings, implementation paths and guides.
+- **Map:** explore connected behaviours on a React Flow canvas with pan, zoom and fit-to-view controls. Select a node to inspect its dependencies, consumers and verification pointers.
+
+File changes update the open portal automatically. Results are labelled as **saved snapshots**: browsing does not rerun verification or recheck source freshness. An unfinished report stays unfinished; it is not assumed to be an active process. Use `groundwork view report` for the existing freshness reassessment.
+
+The portal supports local and PR run reports, including legacy `.verify/` storage. Browsing preserves report and evidence files. Map relationships come from the existing catalogue's `dependsOn` metadata; unrecorded relationships stay unrecorded.
+
 ## Trust
 
 Confidence belongs to a specific claim with a traceable chain: **requirement → assertion or observation → evidence → identified source and context**. A map, check name or attached artifact alone is not proof. Inspect the actual assertions and observations, including images or traces, and close each original requirement against what they establish.
