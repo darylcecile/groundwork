@@ -125,9 +125,9 @@ The agent can also run `bun <skill-directory>/verify.mjs` from the project when 
 
 ## Local portal
 
-Run any `groundwork` command outside CI and open the **Portal** URL printed in the terminal. One small background server handles all your repositories. Each command registers its project and prints a link to that project's view on the shared server. It listens on `127.0.0.1`; the browser opens only when you follow the link. Set `GROUNDWORK_PORTAL=0` to disable automatic startup.
+Run any `groundwork` command outside CI to register its project with the local portal. One small background server handles all your repositories and listens on `127.0.0.1`. Registration is silent. Set `GROUNDWORK_PORTAL=0` to disable automatic startup.
 
-Use the project selector in the top bar to switch repositories. The portal remembers registered project paths under `$XDG_CACHE_HOME/groundwork/portal` (default `~/.cache/groundwork/portal`), separately from verification data. Project-specific URLs can be bookmarked.
+Use the project selector in the top bar to switch repositories. The portal remembers registered project paths under `$XDG_CACHE_HOME/groundwork/portal` (default `~/.cache/groundwork/portal`), separately from verification data. Read the listening port from the `port` file in that directory and open `http://127.0.0.1:<port>`. Project-specific URLs can be bookmarked.
 
 The server exits after 30 minutes without an open portal or recent requests. The next CLI command starts it again with the registered projects available; an updated server build replaces the shared daemon automatically.
 

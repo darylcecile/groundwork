@@ -16,7 +16,7 @@
     "portal": {
       "description": "Browse saved verification reports, evidence and the behaviour catalogue in a live-updating local portal",
       "paths": ["portal/**", "lib/portal.mjs", "test/portal.test.ts", "skills/verify-work/verify.mjs"],
-      "entry": "groundwork <command> → printed local portal URL",
+      "entry": "groundwork <command> → silent local portal registration",
       "guide": ".groundwork/VERIFY.md#browse-the-local-portal",
       "dependsOn": ["catalogue"]
     },

@@ -15,7 +15,7 @@ For live local development, run `bun link` from this directory, then `groundwork
 
 ### Portal development
 
-Edit `portal/`, then run `bun run build:portal`. Run a Groundwork command and follow its portal URL to inspect the result. `bun run check:portal` typechecks the portal and verifies that its generated distribution matches its source.
+Edit `portal/`, then run `bun run build:portal`. Run a Groundwork command to register the project with the local portal, then inspect the result in the portal. `bun run check:portal` typechecks the portal and verifies that its generated distribution matches its source.
 
 Commit `portal/dist/` with portal source changes. Its bundled server and browser assets let Git installations start immediately, without an install hook, dependency resolution or a development server at runtime. Build dependencies live in `devDependencies`; the distributed portal includes their license notices. The graph code loads on demand. The CLI loads only its small startup helper in-process.
 

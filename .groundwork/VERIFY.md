@@ -35,7 +35,7 @@ The integration test creates a small preferences CLI with broken theme persisten
 
 ### Browse the local portal
 
-Run CLI commands in two different repositories outside CI. Both links must use the same loopback origin and server PID, with project-specific URLs. The project selector switches reports, evidence, catalogue and map between registered repositories. Project registration is retained in the user's cache, outside project data. CI skips startup, and `GROUNDWORK_PORTAL=0` disables it locally. Startup failure must preserve the requested command's exit status.
+Run CLI commands in two different repositories outside CI. Both projects must register with the same loopback origin and server PID, with project-specific URLs derived from their registered IDs. Commands must not print a portal banner. The project selector switches reports, evidence, catalogue and map between registered repositories. Project registration is retained in the user's cache, outside project data. CI skips startup, and `GROUNDWORK_PORTAL=0` disables it locally. Startup failure must preserve the requested command's exit status.
 
 Exercise simultaneous registrations and restart the daemon: both projects should remain available. Use the same run ID in two fixtures to establish that their reports and evidence stay isolated. Changing or registering another project must not switch the current browser view or reset its inspection state. A missing project should leave other projects usable.
 

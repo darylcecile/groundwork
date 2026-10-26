@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ciVariables, portalBuild, portalHealth, portalPorts, portalStateDirectory, portalURL, probePortal } from "../lib/portal.mjs";
 import { createPortal } from "../portal/server";
@@ -393,11 +393,25 @@ function localEnvironment(extra: Record<string, string> = {}) {
   return { ...env, ...extra };
 }
 
-async function invoke(root: string, args: string[], env: Record<string, string | undefined>, entry = cli) {
+async function registeredPortal(root: string, scope: string) {
+  const ports = portalPorts(scope);
+  const matches = await Promise.all(ports.map(port => probePortal(scope, port)));
+  const port = ports.find((_, index) => matches[index]);
+  if (!port) return { url: undefined, origin: undefined };
+  const origin = portalURL(port);
+  const response = await fetch(`${origin}/api/projects`, { redirect: "error", signal: AbortSignal.timeout(1000) });
+  expect(response.status).toBe(200);
+  const list: ProjectsResponse = await response.json();
+  const canonicalRoot = realpathSync(root);
+  const project = list.projects.find(project => project.root === canonicalRoot);
+  return { url: project ? `${origin}/?project=${project.id}` : undefined, origin };
+}
+
+async function invoke(root: string, args: string[], env: Record<string, string | undefined>, entry = cli, projectRoot = root) {
   const child = Bun.spawn([process.execPath, entry, ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-  const url = stderr.match(/Groundwork portal: (http:\/\/127\.0\.0\.1:\d+\/\?project=[a-f0-9]+)/)?.[1];
-  return { code, stdout, stderr, url, origin: url ? new URL(url).origin : undefined };
+  const scope = resolve(root, env.XDG_CACHE_HOME || join(env.HOME || homedir(), ".cache"), "groundwork/portal");
+  return { code, stdout, stderr, ...await registeredPortal(projectRoot, scope) };
 }
 
 async function stopPortal(scope: string) {
@@ -448,9 +462,10 @@ test("concurrent CLI commands in multiple repositories share one detached daemon
     expect(list.projects.find(project => project.id === id)?.root).toBe(roots[index]);
     expect((await (await fetch(`${result.origin}/api/health`)).json()).pid).toBe(health.pid);
   }
-  const repeat = await invoke(root, ["bad-command"], localEnvironment({ CI: "0" }));
+  const repeat = await invoke(temporaryProject(), ["bad-command"], localEnvironment({ CI: "0" }));
   expect(repeat.code).toBe(2);
-  expect(repeat.url).toBe(results[0]!.url);
+  expect(repeat.url).toBeTruthy();
+  expect(repeat.origin).toBe(origin);
   expect((await (await fetch(`${origin}/api/health`)).json()).pid).toBe(health.pid);
   expect(readdirSync(root)).toEqual([]);
   expect(readdirSync(other)).toEqual([]);
@@ -492,28 +507,33 @@ test("CLI uses init target and existing project discovery while CI, recursion an
   const cwd = temporaryProject();
   const target = temporaryProject();
   stopDaemons();
-  const init = await invoke(cwd, ["init", target], localEnvironment());
+  const init = await invoke(cwd, ["init", target], localEnvironment(), cli, target);
   expect(init.code).toBe(0);
   expect(init.url).toBeTruthy();
   const id = new URL(init.url!).searchParams.get("project");
   expect((await (await fetch(`${init.origin}/api/projects/${id}/runs`)).json()).project.root).toBe(target);
-  mkdirSync(join(target, "nested"));
-  const nested = await invoke(join(target, "nested"), ["view", "guide"], localEnvironment());
-  expect(nested.url).toBe(init.url);
+  const nestedProject = temporaryProject();
+  write(nestedProject, ".groundwork/verify.json", { checks: {} });
+  mkdirSync(join(nestedProject, "nested"));
+  const nested = await invoke(join(nestedProject, "nested"), ["view", "guide"], localEnvironment(), cli, nestedProject);
+  expect(nested.code).toBe(0);
+  expect(nested.url).toBeTruthy();
+  expect(nested.origin).toBe(init.origin);
   for (const env of [{ CI: "1" }, { CI: "false", GITHUB_ACTIONS: "true" }, { GROUNDWORK_EVIDENCE_DIR: "/evidence" }, { GROUNDWORK_PORTAL: "0" }]) {
     const result = await invoke(cwd, ["--help"], localEnvironment(env));
     expect(result.code).toBe(0);
     expect(result.url).toBeUndefined();
+    expect(result.origin).toBe(init.origin);
   }
-  expect((await (await fetch(`${init.origin}/api/projects`)).json()).projects.map((project: Project) => project.root)).toEqual([target]);
+  expect((await (await fetch(`${init.origin}/api/projects`)).json()).projects.map((project: Project) => project.root).sort()).toEqual([target, nestedProject].sort());
   const home = temporaryProject();
-  const update = await invoke(target, ["update"], localEnvironment({
+  const update = await invoke(cwd, ["update"], localEnvironment({
     HOME: home, COPILOT_HOME: join(home, ".copilot"), XDG_CONFIG_HOME: join(home, ".config"),
   }));
   expect(update.code).toBe(0);
-  expect(update.url).toBe(init.url);
-  expect(update.stderr.match(/Groundwork portal:/g)).toHaveLength(1);
-  expect((await (await fetch(`${init.origin}/api/projects`)).json()).projects.map((project: Project) => project.root)).toEqual([target]);
+  expect(update.url).toBeTruthy();
+  expect(update.origin).toBe(init.origin);
+  expect((await (await fetch(`${init.origin}/api/projects`)).json()).projects.map((project: Project) => project.root).sort()).toEqual([target, nestedProject, cwd].sort());
   expect(existsSync(join(home, ".cache/groundwork/portal"))).toBe(false);
 }, 15000);
 
@@ -539,6 +559,7 @@ test("occupied ports fall back without changing CLI exits, including when all ca
   const failed = await invoke(blocked, ["bad-command"], localEnvironment({ XDG_CACHE_HOME: blockedCache }));
   expect(failed.code).toBe(2);
   expect(failed.url).toBeUndefined();
+  expect(failed.origin).toBeUndefined();
   expect(failed.stderr).toContain("Unknown command");
   expect(Date.now() - started).toBeLessThan(6000);
 }, 15000);
