@@ -138,6 +138,33 @@ groundwork verify [name ...] [--plan file] [--changed ref] [--base ref]
 
 For the example, `groundwork verify theme-persists --plan .groundwork/plans/task.json` also runs `settings-contract` because its invariant is active. Using `--changed` does not perform a baseline comparison; `--base` is independent.
 
+## Scripted verification
+
+The execution unit is a known journey or a batch of selected checks. The agent chooses what to verify, resolves genuine unknowns, and reviews results; a script performs the mechanical steps. This applies to browser, device, API, and CLI verification, including the first run of a newly understood journey.
+
+1. **Discover only what is missing.** Inspect enough to establish the starting state, targets, actions, and expected outcomes. Once those are known, script the sequence before executing it. Dynamic values that can be read and passed between steps belong in the script. A new agent turn is warranted when an observation requires a decision the script cannot make, or a failure needs diagnosis.
+2. **Reuse the execution path.** Prefer an existing test or driver. Otherwise use the project's existing tools in a small script; a new integration-test framework is unnecessary. Keep reusable journeys in `.groundwork/scripts/`, register their commands and evidence in the active verification configuration, and run them through `groundwork verify`. A short one-off can use one batched tool call or a scratch script under `.groundwork/tmp/`. Do not add permanent scaffolding for an isolated check.
+3. **Keep the sequence reliable.** Put setup, ordered actions, condition-based waits, assertions, and cleanup in the driver or its runner lifecycle. Use stable semantic locators, test IDs, or known selectors; do not replay snapshot refs after the page changes. Drive actual user-facing controls rather than mutating UI state to make an assertion pass. Batching removes model round trips, not ordering: never parallelize dependent actions in the same browser or device session. Isolate sessions and fixtures for independent scenarios.
+4. **Return results, not a conversation per step.** Assert observable outcomes; a successful click or a printed value is not an assertion. Save diagnostic logs and relevant screenshots/traces in `GROUNDWORK_EVIDENCE_DIR`. Return a compact per-scenario summary, failed step and evidence paths instead of narrating every successful action or dumping every snapshot. Preserve failures, stop dependent steps when their prerequisites fail, and collect results from independent scenarios where the runner supports it. Do not hide failures with blanket error suppression or retry until green.
+5. **Review and reuse.** Invoke selected checks together, inspect the saved evidence, and diagnose failures from that run. Update the driver when a missing step or assertion is discovered. Reviewers receive the command, assertions, fixture context, and evidence; they reuse a current result and rerun affected checks only for source/environment changes, failures, or missing coverage. Visual judgement still requires inspecting the captured screen or a targeted live observation.
+
+For the guide-opening journey, a driver would select the checkout node, focus the guide summary, press Enter, wait for the guide to open, assert the expected guide content, and capture the rendered result. Those actions are sequential statements in a script, not separate agent tool calls. After creating the driver and its assertions, a project could register:
+
+```json
+{
+  "checks": {
+    "checkout-guide": {
+      "command": "bash .groundwork/scripts/checkout-guide.sh",
+      "expect": "Opening the checkout guide with the keyboard reveals the expected content",
+      "kind": "ui",
+      "artifacts": ["guide.png", "browser.log"]
+    }
+  }
+}
+```
+
+The script must write those evidence files and fail when its assertions fail. Merge the entry into the existing configuration, then invoke `groundwork verify checkout-guide` once. Inspect `guide.png` and the reported assertions after the run. Declaring this check or capturing a screenshot alone does not establish the behaviour. Use the lifecycle and result contract below when implementing the driver.
+
 ## Driver lifecycle and evidence
 
 Each trial runs optional setup, the existing `command` as the exercise, then optional cleanup. Commands run in separate Bash processes from the candidate project directory with `-e` and `pipefail`. Setup shell exports do not carry into later commands. Cleanup is attempted when an exercise finishes or fails; an abruptly terminated process may be unable to complete it.

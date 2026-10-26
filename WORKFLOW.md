@@ -5,9 +5,9 @@
 ## The working loop
 
 1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
-2. **Choose how to prove it.** Find the real path through the feature and the existing checks. For a bug, reproduce the reported failure when possible. Decide which observations would establish success before changing the implementation.
+2. **Choose how to prove it.** Find the real path and existing checks; define success assertions before changing the implementation. Once the target and flow are known, batch deterministic multi-step browser, device, API, or CLI verification in an existing driver/test or the smallest script before executing—even on the first run. Keep interactive discovery bounded to unknowns and preserve sequential stateful order. For a bug, reproduce the reported failure when possible.
 3. **Make the smallest suitable change.** Follow the project's established patterns. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
-4. **Verify and review.** Exercise the changed behaviour, run the project's required checks, and inspect the complete diff for missed requirements, regressions, unnecessary complexity, and unrelated changes. Rerun affected checks after subsequent code changes. Stop when the requested outcome and required checks are satisfied.
+4. **Verify and review.** Exercise the changed behaviour through the chosen checks, run the project's required checks, and inspect the assertions, saved evidence, and complete diff for missed requirements, regressions, unnecessary complexity, and unrelated changes. Rerun affected checks only when changes, failures, stale evidence, or missing evidence/coverage justify it; use the check command rather than manual replay. Stop when the requested outcome and required checks are satisfied.
 5. **Hand back the result.** State what works, the evidence, and any remaining gaps. Include requested delivery state: commits, pushes, PRs, or releases. Resolve every explicit deliverable or explain its blocker.
 
 ## What confidence means
@@ -55,7 +55,9 @@ The `explore` skill establishes those relationships. During adoption or an expli
 
 Use `groundwork map [feature]` to inspect the catalogue as an ASCII overview or focused relationship map. Source-backed direct dependencies live in each behaviour's optional `dependsOn` list; the CLI derives consumers from those links. Keep their rationale in the narrative map and use it to choose further investigation and verification.
 
-Reuse the project's existing browser tooling, test runner, API client, and development commands. When a recurring interaction needs automation, make one small project-owned driver under `.groundwork/scripts/`; put its supporting configs in `.groundwork/config/`. Keep task plans, notes, scratch files and evidence under `.groundwork/` as well. Update the behaviour guide when the feature's entry point or behaviour changes.
+Reuse the project's existing browser/device tooling, test runner, API client, and development commands. For reusable journeys that lack automation, create a small project-owned driver under `.groundwork/scripts/` and wire its command into `.groundwork/verify.json`; put supporting configs in `.groundwork/config/`. A tiny one-off can use a single batched tool invocation without adding a framework or integration suite.
+
+Return to the model for decisions, failure diagnosis, or evidence review. Keep per-action narration and successful step logs out of model context; retain full diagnostic logs and artifacts and return concise outcomes, failed assertions, and evidence paths. Keep task plans, notes, scratch files and evidence under `.groundwork/`. Update the behaviour guide when the feature's entry point or behaviour changes.
 
 ## The handoff
 

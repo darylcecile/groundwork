@@ -3,14 +3,25 @@ name: implement
 description: Use for implementation tasks, feature development, and project setup.
 ---
 
-> [!IMPORTANT]
-> Required pre-work: Before implementation, check whether the current user has a GitHub skills repository. If one exists, ensure its skills are installed and load applicable instructions. Report the outcome before proceeding. E.g. `<github_user_login>/skills` repo. You may find the current user using `git` or `gh`.
+Use applicable skills already available in the session. Personal-skills installation is a best-effort bootstrap, not a session-start prerequisite: skip it when those skills are already available or installed. Do not inventory the user's repository, compare versions, or report setup status on every task.
+
+If bootstrap is needed, make one quiet, noninteractive global install attempt using the environment's package runner (`bunx`, `pnpm dlx`, or `npx --yes`). With the current user's GitHub login known, for example:
+
+```sh
+bunx skills add "<github-login>/skills" --global --yes >/dev/null 2>&1 || true
+```
+
+Reuse a known login. If unknown, at most one quiet `gh api user --jq .login` lookup may precede the install in the same tool call; skip bootstrap if it fails. Do not infer the user from the current repository's owner. Use a short tool timeout, accept installation failure, and continue the task without retrying, prompting for authentication, or narrating the outcome. Revisit setup only when the user requests it or a missing skill is necessary to the task. Load only applicable installed instructions.
 
 Carry out the requested work as described by the user. Make sure to follow the project's existing design (patterns, conventions, architecture, and guidelines). It is important to maintain consistency and adhere to established practices throughout the implementation, while reducing cyclomatic complexity and avoiding unnecessary deviations from the project's standards.
 
 If the user has provided an issue or reference, make sure to review it thoroughly to understand the context, requirements, and any constraints before starting the implementation. If the provided source is ambiguous or incomplete, seek clarification from the user before proceeding.
 
 For a nontrivial change, use the `explore` skill before deciding the implementation scope and approach. Reuse a relevant exploration from this task when it is still current. Carry its entry points, owning modules, data flow, constraints, affected callers, verification options, and unresolved questions into the task context and any delegated brief. Existing `.groundwork/maps/` documents help navigate; confirm the relevant claims against current source before relying on them.
+
+Load and use `verify-work` for every implementation task, reading the project's `.groundwork/VERIFY.md` and `.groundwork/verify.json` when present. Before executing a known deterministic multi-step browser, device, API, or CLI verification, reuse an existing driver/test or write the smallest script—even for the first run. Use bounded interactive discovery only until the target and flow are known; then batch the known steps, returning to the model only for decisions, failure diagnosis, or evidence review. Do not execute a known journey one action per tool turn.
+
+Preserve real assertions, condition-based waits, and sequential stateful order in the driver; batching does not mean parallel actions against the same browser or device session. Reuse the project runner. Put new reusable journey drivers in `.groundwork/scripts/` and wire their commands into `.groundwork/verify.json`. A tiny one-off may use a single batched tool invocation without adding a framework or integration suite. Keep per-action narration and successful step logs out of model context: retain full diagnostic logs and artifacts, surface concise outcomes, failed assertions, and evidence paths, and inspect the evidence before claiming success.
 
 Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
 
@@ -65,15 +76,14 @@ Additionally, regularly review the decisions and context sections to ensure that
 - Continuously update the relevant task files with context, decisions, and progress.
 - Once you are confident that the task files are correctly set up, use Groundwork to prepare the tasks for implementation; defining real objectives, goals, and journeys based on the context of the task files themselves.
 - For each task, spin up the necessary subagent (based on model specified in the task), and assign it to handle the implementation according to the prepared objectives, goals, and journeys.
+  - Include the journey's starting state, expected assertions, and existing checks in the brief; require the completion report to provide the exact reproducible check command and saved evidence paths.
 - Follow the implementation checklist to complete the task.
 - Refresh affected existing maps and their guide/catalogue links as part of the change. Use `explore` to retrace a changed flow when needed; distinguish source findings from runtime observations.
-- Only when the implementation checklist is complete, go through the verification checklist and verify all items.
-- Keep the task file up to date until the task is completed and verified.
-- Make sure to run `groundwork verify ...` to run the checks for that task. If anything needs attention, address it accordingly.
+- Once the implementation checklist is complete, run its scripted verification through `groundwork verify ...` (or the existing project runner if no Groundwork configuration exists), then inspect the observations and evidence. Address relevant failures and keep the task file current until verified.
 - When a subagent reports a task as completed, spawn a new judge subagent (based on task judge model specified) to evaluate the implementation and ensure it meets the defined criteria.
   - Judge agents can give feedback and request revisions (which should be outlined in the task file).
   - Revisions should be addressed before the task can be considered complete and verified.
-  - The judge should check that the definition of done has been met before approving the task as complete.
+  - The judge should check the definition of done against the implementation, driver assertions, and saved evidence before approving. Rerun affected checks only when changes, failures, stale evidence, or missing evidence/coverage justify another run; use the reproducible command instead of manually replaying a known journey.
   - The judge should provide clear reasoning for any requested revisions to ensure the implementer understands the necessary changes.
   - The judge MUST evaluate the implementation for correctness, completeness, adherence to requirements, and overall quality _INCLUDING_ checking for slop and complexity.
   - The judge's response should cover:
