@@ -5,7 +5,7 @@ description: Use for implementation tasks, feature development, and project setu
 
 Use applicable skills already available in the session. Personal-skills installation is a best-effort bootstrap, not a session-start prerequisite: skip it when those skills are already available or installed. Do not inventory the user's repository, compare versions, or report setup status on every task.
 
-If bootstrap is needed, make one quiet, noninteractive global install attempt using the environment's package runner (`bunx`, `pnpm dlx`, or `npx --yes`). With the current user's GitHub login known, for example:
+If bootstrap is needed, make one quiet, noninteractive global install attempt using the environment's package runner (`bunx`, `pnpm dlx`, or `npx --yes`). If none is available, skip bootstrap; do not install a package manager. With the current user's GitHub login known, for example:
 
 ```sh
 bunx skills add "<github-login>/skills" --global --yes >/dev/null 2>&1 || true
@@ -21,7 +21,7 @@ For a nontrivial change, use the `explore` skill before deciding the implementat
 
 Load and use `verify-work` for every implementation task, reading the project's `.groundwork/VERIFY.md` and `.groundwork/verify.json` when present. Before executing a known deterministic multi-step browser, device, API, or CLI verification, reuse an existing driver/test or write the smallest script—even for the first run. Use bounded interactive discovery only until the target and flow are known; then batch the known steps, returning to the model only for decisions, failure diagnosis, or evidence review. Do not execute a known journey one action per tool turn.
 
-Preserve real assertions, condition-based waits, and sequential stateful order in the driver; batching does not mean parallel actions against the same browser or device session. Reuse the project runner. Put new reusable journey drivers in `.groundwork/scripts/` and wire their commands into `.groundwork/verify.json`. A tiny one-off may use a single batched tool invocation without adding a framework or integration suite. Keep per-action narration and successful step logs out of model context: retain full diagnostic logs and artifacts, surface concise outcomes, failed assertions, and evidence paths, and inspect the evidence before claiming success.
+Preserve real assertions, condition-based waits, and sequential stateful order in the driver; batching does not mean parallel actions against the same browser or device session. Reuse the project runner. Put new reusable journey drivers in `.groundwork/scripts/` and register them in the existing active verification configuration, including legacy root `verify.json`. If none exists, invoke the existing runner or script directly. A tiny one-off may use a single batched tool invocation without adding a framework or integration suite. Keep per-action narration and successful step logs out of model context: retain full diagnostic logs and artifacts, surface concise outcomes, failed assertions, and evidence paths, and inspect the evidence before claiming success.
 
 Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
 
