@@ -63,7 +63,10 @@ As you progress through a task, make sure to keep the checklist state up to date
 Additionally, regularly review the decisions and context sections to ensure that any changes or new information are accurately reflected. This practice helps maintain alignment with the project's goals and facilitates effective communication among team members.
 
 > [!IMPORTANT]
-> When deciding the models, make sure to consider the task requirements, the capabilities of each available models, and the expected outcomes to ensure the most suitable model is chosen for the task. Never choose the same model for implementation and judging; ideally choose models from different families or with complementary strengths. For example, you might choose a model optimized for code generation for implementation (like `gpt-6 astra` using `xhigh`) and a model optimized for reasoning and evaluation for judging (like `claude-opus-5.5` using `xhigh`).
+> When deciding the models, make sure to consider the task requirements, the capabilities of each available models, and the expected outcomes to ensure the most suitable model is chosen for the task. Never choose the same model for implementation and judging; ideally choose models from different families or with complementary strengths. For example, you might choose a model optimized for code generation for implementation (like `gpt-6 astra` using `xhigh`) and a model optimized for reasoning and evaluation for judging (like `claude-opus-5.5` using `xhigh`). If you cant pick a judge model, use `opus 5.5 xhigh` as a fallback - this wass chosen as fallback by the user.
+
+> [!IMPORTANT]
+> Remember to use subagents always instead of doing implementation in the main session. Your performance and ability to ensure the tasks are not going beyond initial scope, depends on your context window remaining clean. To avoid context rot and poisoning, use subagents for work. Only use main session for orchestration.
 
 **Order of operation:**
 - Review the issue or reference provided by the user.
