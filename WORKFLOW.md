@@ -6,7 +6,7 @@
 
 1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
 2. **Choose how to prove it.** Find the real path and existing checks; define success assertions before changing the implementation. Once the target and flow are known, batch deterministic multi-step browser, device, API, or CLI verification in an existing driver/test or the smallest script before executing—even on the first run. Keep interactive discovery bounded to unknowns and preserve sequential stateful order. For a bug, reproduce the reported failure when possible.
-3. **Make the smallest suitable change.** Follow the project's established patterns. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
+3. **Make the smallest suitable change.** Follow the project's established patterns. Use focused checks when evidence is needed to choose the next edit. Finish planned formatting, generated files, documentation, and verification bindings, then review the coherent batch before final checks. Coordinate source stability with agents sharing the worktree. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
 4. **Verify and review.** Exercise the changed behaviour through the chosen checks, run the project's required checks, and inspect the assertions, saved evidence, and complete diff for missed requirements, regressions, unnecessary complexity, and unrelated changes. Rerun affected checks only when changes, failures, stale evidence, or missing evidence/coverage justify it; use the check command rather than manual replay. Stop when the requested outcome and required checks are satisfied.
 5. **Hand back the result.** State what works, the evidence, and any remaining gaps. Include requested delivery state: commits, pushes, PRs, or releases. Resolve every explicit deliverable or explain its blocker.
 
@@ -39,7 +39,7 @@ The CLI reports execution outcomes as passed, failed, or inconclusive. The agent
 - **Code quality:** inspect how the diff fits the existing design, interfaces, ownership, and data flow. Use existing lint, types, and architectural checks for their enforced constraints.
 - **Performance:** measure the relevant workload before and after only when performance is part of the task or an observed concern.
 
-Choose evidence proportional to the actual change. Reuse existing coverage. Add a regression test when it catches a realistic failure the current tests miss. A fresh review pass can help; a separate agent is useful only when the task warrants delegation and it is permitted.
+Choose evidence proportional to the actual change. Reuse existing coverage, inspect overlapping check commands, and follow the [verification cadence](skills/verify-work/references/verification.md#verification-cadence) for focused iteration and truthful evidence reuse. Add a regression test when it catches a realistic failure the current tests miss. A fresh review pass can help; a separate agent is useful only when the task warrants delegation and it is permitted.
 
 ## The project contribution
 
