@@ -4,6 +4,7 @@ import { appendFileSync, cpSync, mkdirSync, readFileSync,
 import { join, relative, resolve, sep } from "node:path";
 import { catalogue, catalogueIssues, hasConfig, loadConfig, parseConfig, selectChecks } from "../../lib/config.mjs";
 import { groundworkPath } from "../../lib/layout.mjs";
+import { prepareProject } from "../../lib/migration.mjs";
 import { assess, ensure, readJSON, refreshEvidence, safePath, validatePlan, withInvariants, within, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, executeCommand, git, runChecks, source } from "../../lib/runner.mjs";
 import { prepareEvidenceStore } from "../../lib/store.mjs";
@@ -45,6 +46,15 @@ async function agent(phase, prompt, cwd) {
 
 try {
   const cwd = within(repository, projectDirectory);
+  let planInput;
+  let planInputError;
+  if (process.env.PR_VERIFY_PLAN) {
+    try {
+      ensure(safePath(process.env.PR_VERIFY_PLAN), "The plan input must be a relative file within the project.");
+      planInput = readJSON(within(cwd, resolve(cwd, process.env.PR_VERIFY_PLAN)));
+    } catch (error) { planInputError = error; }
+  }
+  if (!planInputError) prepareProject(cwd);
   const storage = prepareEvidenceStore(cwd);
   output = resolve(process.env.PR_VERIFY_OUTPUT || join(storage.runs, id));
   mkdirSync(output, { recursive: true });
@@ -64,9 +74,10 @@ try {
   result.pullRequest = pull.number;
   result.headSha = pull.head.sha;
   ensure(pull.head.repo?.full_name === result.repository, "This version verifies PR branches within the importing repository.");
+  if (planInputError) throw planInputError;
   const commands = { setup: process.env.PR_VERIFY_SETUP || "", checks: process.env.PR_VERIFY_CHECKS || "" };
   const config = hasConfig(cwd) ? loadConfig(cwd) : parseConfig({ checks: {} });
-  ensure(commands.checks.trim() || Object.keys(config.checks).length, "Provide checks or configure project checks in .groundwork/verify.json.");
+  ensure(commands.checks.trim() || Object.keys(config.checks).length, "Provide workflow checks or have the agent configure project checks in .groundwork/verify.d/.");
   const artifacts = (process.env.PR_VERIFY_ARTIFACTS || "").split(/\r?\n/).map(path => path.trim().replace(/\/+$/, "")).filter(Boolean);
   ensure(artifacts.every(safePath), "Artifact paths must name files or directories within the project; globs and parent paths are not supported.");
   const excluded = artifacts.map(path => relative(actualRepository, resolve(cwd, path)));
@@ -97,8 +108,7 @@ try {
   const planPath = join(output, "plan.json");
   let taskPlan = null;
   if (process.env.PR_VERIFY_PLAN) {
-    ensure(safePath(process.env.PR_VERIFY_PLAN), "The plan input must be a relative file within the project.");
-    taskPlan = validatePlan(readJSON(within(cwd, resolve(cwd, process.env.PR_VERIFY_PLAN))));
+    taskPlan = validatePlan(planInput);
     writeFileSync(join(output, "planning.log"), "Using the supplied verification plan.\n");
     result.planning = { status: "passed", exitCode: 0, durationMs: 0, log: "planning.log" };
   } else if (process.env.GITHUB_ACTIONS === "true" && !process.env.COPILOT_GITHUB_TOKEN) {

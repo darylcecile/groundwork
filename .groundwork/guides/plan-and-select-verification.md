@@ -1,0 +1,7 @@
+### Plan and select verification
+
+Before changing behaviour, record a small plan such as `.groundwork/plans/task.json`, with each requirement bound to the assertions that establish it. `--plan` adds bound checks and checks covering its behaviours to the selection, including named and change-aware runs. Required checks and active invariants remain included. A requirement marked `review: true` also needs an evidence-backed `kind: "review"` observation explicitly covering its requirement ID.
+
+Use a disposable project's catalogue to exercise `view guide [query]`, named selection, and `--changed <ref>`. Auto-discovered `.groundwork/verify.d/*.json` fragments compose into one catalogue after preparation. Validate references across files and report duplicate IDs or conflicting context values with their source paths. Changes matching check or catalogue paths select their checks; legacy unscoped checks remain conservative. Unmapped paths and behaviours without checks remain visible planning signals. Guide inspection reports stale references without executing checks.
+
+For opted-in deterministic checks, exercise unchanged-input receipt reuse and `--fresh`. Source content, check/engine/runtime identity, context, plan, declared environment values and explicit input files govern matching. Changed or unavailable evidence prevents reuse; a reused failure stays failed. Repeated trials, baseline comparisons and checks with setup/cleanup execute afresh. Inspect the invocation's own run using `groundwork view report <id>` rather than assuming it is still latest.

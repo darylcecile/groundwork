@@ -64,7 +64,7 @@ test("install discovers every bundled skill and preserves unrelated personal ski
   for (const id of ["verify-work", "review-work"]) expect(realpathSync(installedSkill(value.home, id))).toBe(realpathSync(join(source, "skills", id)));
   expect(existsSync(installedSkill(value.home, "shared"))).toBe(false);
   const instructions = readFileSync(join(value.home, ".copilot/copilot-instructions.md"), "utf8");
-  expect(instructions).toContain("`.groundwork/VERIFY.md` and `.groundwork/verify.json`");
+  expect(instructions).toContain("`.groundwork/VERIFY.md` and `.groundwork/verify.d/`");
   value.run(process.execPath, [cli(source), "install"]);
   expect(readFileSync(join(value.home, ".copilot/copilot-instructions.md"), "utf8")).toBe(instructions);
   expect(readFileSync(join(installedSkill(value.home, "personal-work"), "SKILL.md"), "utf8")).toBe("Personal content\n");
@@ -80,13 +80,13 @@ test("install preserves customized verification instructions and deduplicates ex
   expect(readFileSync(copilot, "utf8")).toBe(custom);
   const opencode = join(value.home, ".config/opencode/AGENTS.md");
   const current = readFileSync(opencode, "utf8");
-  const legacy = current.replaceAll(".groundwork/", "");
+  const legacy = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `.groundwork/VERIFY.md` and `.groundwork/verify.json` when present. Set up project verification files when I ask to adopt the framework.\n";
   write(opencode, `${legacy}\nKeep this rule.\n\n${current}`);
   value.run(process.execPath, [cli(source), "install"]);
   const updated = readFileSync(opencode, "utf8");
   expect(updated.match(/## Verification workflow/g)).toHaveLength(1);
   expect(updated).toContain("Keep this rule.");
-  expect(updated).toContain("`.groundwork/verify.json`");
+  expect(updated).toContain("`.groundwork/verify.d/`");
   value.run(process.execPath, [cli(source), "install"]);
   expect(readFileSync(opencode, "utf8")).toBe(updated);
 });

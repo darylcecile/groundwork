@@ -87,14 +87,14 @@ Use only paths and anchors that exist in the project. Check path patterns agains
 
 ## Connect the existing catalogue
 
-Consult the installed `verify-work` reference before modifying verification files. Preserve existing entries in their active files; legacy root `verify.json` remains supported. For a new catalogue entry, save a fragment such as `.groundwork/verify.d/catalogue.json`. Fragments are discovered automatically and validated together, including cross-file references and duplicate IDs. If the entry already exists, update it in place instead of adding a second definition. For example, a map's `## Discovery` section could be linked as follows:
+Consult the installed `verify-work` reference before modifying verification files. During authorized map maintenance, project commands automatically convert older configuration and guide sections into active fragments and guides. Preserve existing IDs and bindings in those files. For a new catalogue entry, save a fragment such as `.groundwork/verify.d/catalogue.json`. Fragments are discovered automatically and validated together, including cross-file references and duplicate IDs. If the entry already exists, update it in place instead of adding a second definition. For example, a map's `## Discovery` section could be linked as follows:
 
 ```json
 {
   "behaviours": {
     "catalogue": {
       "description": "Discover behaviours and enforce applicable project invariants",
-      "paths": ["lib/config.mjs", "test/config.test.mjs", ".groundwork/verify.json"],
+      "paths": ["lib/config.mjs", "test/config.test.mjs", ".groundwork/verify.d/*.json"],
       "entry": "groundwork view guide / groundwork verify --changed <ref>",
       "guide": ".groundwork/maps/catalogue.md#discovery"
     }

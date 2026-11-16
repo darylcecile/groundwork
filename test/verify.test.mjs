@@ -8,9 +8,11 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { catalogueIssues, configFiles, loadConfig } from "../lib/config.mjs";
 import { evidenceStore } from "../lib/store.mjs";
 
 const cli = fileURLToPath(new URL("../skills/verify-work/verify.mjs", import.meta.url));
+const realBun = realpathSync(process.execPath);
 const directories = [];
 let previousStateHome;
 
@@ -37,9 +39,17 @@ function write(root, path, content) {
 }
 
 function invoke(root, args, env = {}) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8",
-    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0", ...env } });
+  const result = spawnSync(realBun, [cli, ...args], { cwd: root, encoding: "utf8",
+    env: { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0", ...env } });
   return { code: result.status, output: result.stdout + result.stderr };
+}
+
+function snapshot(root) {
+  return readdirSync(root).sort().flatMap(name => {
+    const path = join(root, name);
+    const info = lstatSync(path);
+    return info.isDirectory() ? snapshot(path) : [[path, info.mtimeMs, readFileSync(path, "utf8")]];
+  });
 }
 
 function git(root, ...args) {
@@ -57,7 +67,7 @@ function project(checks = {}) {
 }
 
 function setChecks(root, checks) {
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks }));
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks }));
 }
 
 function saved(root) {
@@ -71,20 +81,21 @@ test("fresh project setup keeps owned files under .groundwork and is repeatable"
   const root = temporaryDirectory();
   expect(invoke(root, ["init"]).code).toBe(0);
   expect(readdirSync(root).sort()).toEqual([".groundwork", "AGENTS.md"]);
-  expect(readdirSync(join(root, ".groundwork")).sort()).toEqual([".gitignore", "VERIFY.md", "verify.json"]);
+  expect(readdirSync(join(root, ".groundwork")).sort()).toEqual([".gitignore", "VERIFY.md", "guides", "verify.d"]);
   const ignores = readFileSync(join(root, ".groundwork/.gitignore"), "utf8");
-  expect(ignores).toBe("/runs/\n/latest\n/plans/\n/tasks/\n/tmp/\n");
+  expect(ignores).toBe("/plans/\n/tasks/\n/tmp/\n");
   expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toContain("`.groundwork/VERIFY.md`");
-  expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toContain("`.groundwork/verify.json`");
+  expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toContain("`.groundwork/verify.d/`");
+  expect(loadConfig(root).checks).toEqual({});
+  const initialized = snapshot(root);
   expect(invoke(root, ["init"]).code).toBe(0);
-  expect(readdirSync(root).sort()).toEqual([".groundwork", "AGENTS.md"]);
-  expect(readFileSync(join(root, ".groundwork/.gitignore"), "utf8")).toBe(ignores);
+  expect(snapshot(root)).toEqual(initialized);
   git(root, "init", "--quiet");
   setChecks(root, { clean: { command: "true", expect: "Verification keeps project files namespaced" } });
   expect(invoke(root, ["verify"]).code).toBe(0);
   expect(readdirSync(root).sort()).toEqual([".git", ".groundwork", "AGENTS.md"]);
   const changes = git(root, "status", "--porcelain", "--untracked-files=all");
-  expect(changes).toContain(".groundwork/verify.json");
+  expect(changes).toContain(".groundwork/verify.d/feature.json");
   expect(changes).toContain(".groundwork/VERIFY.md");
   expect(changes).not.toContain(".groundwork/runs/");
   expect(changes).not.toContain(".groundwork/latest");
@@ -106,56 +117,79 @@ test("project setup migrates legacy files, preserves content and instruction lin
   write(root, ".verify/plan.json", '{"goal":"Keep this plan"}\n');
   write(root, ".verify/notes.txt", "Keep custom content.\n");
   write(root, ".groundwork/scripts/custom.mjs", "// Keep reusable scripts\n");
-  const config = readFileSync(join(root, "verify.json"), "utf8");
+  const config = loadConfig(root);
   expect(invoke(root, ["init"]).code).toBe(0);
   const instructions = readFileSync(join(root, "AGENTS.md"), "utf8");
   const ignores = readFileSync(join(root, ".gitignore"), "utf8");
   expect(instructions).toStartWith("Keep our existing architecture.");
-  expect(ignores).toBe("dist/\n/.verify/\n");
+  expect(ignores).toBe("dist/\n");
   expect(instructions).toEndWith("## Other rules\nPreserve these.\n");
   expect(instructions.match(/## Verification workflow/g)).toHaveLength(1);
-  expect(instructions).toContain("`.groundwork/verify.json`");
+  expect(instructions).toContain("`.groundwork/verify.d/`");
   expect(realpathSync(join(root, "AGENTS.md"))).toBe(shared);
   expect(invoke(root, ["init"]).code).toBe(0);
   expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toBe(instructions);
   expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(ignores);
-  expect(readFileSync(join(root, ".groundwork/verify.json"), "utf8")).toBe(config);
-  expect(readFileSync(join(root, ".groundwork/VERIFY.md"), "utf8")).toBe("Our existing behaviour guide.\n");
+  expect(loadConfig(root)).toEqual(config);
+  expect(readFileSync(join(root, ".groundwork/guides/project.md"), "utf8")).toBe("Our existing behaviour guide.\n");
+  expect(readFileSync(join(root, ".groundwork/VERIFY.md"), "utf8")).toContain("guides/project.md");
   expect(readFileSync(join(evidenceStore(root).runs, "previous/check/output.log"), "utf8")).toBe("Keep the original evidence.\n");
   expect(readFileSync(evidenceStore(root).latest, "utf8")).toBe("previous\n");
   expect(readFileSync(join(root, ".groundwork/plan.json"), "utf8")).toBe('{"goal":"Keep this plan"}\n');
   expect(readFileSync(join(root, ".groundwork/notes.txt"), "utf8")).toBe("Keep custom content.\n");
   expect(readFileSync(join(root, ".groundwork/scripts/custom.mjs"), "utf8")).toBe("// Keep reusable scripts\n");
   expect(readFileSync(join(root, ".groundwork/.gitignore"), "utf8")).toEndWith("/plan.json\n");
-  for (const path of ["verify.json", "VERIFY.md", ".verify"]) expect(existsSync(join(root, path))).toBe(false);
+  for (const path of ["verify.json", "VERIFY.md", ".verify", ".groundwork/verify.json"]) expect(existsSync(join(root, path))).toBe(false);
 });
 
-test.each(["verify.json", ".groundwork/verify.json"])("migration updates moved catalogue guide references in %s without rewriting commands or other guides", configPath => {
+test.each(["verify.json", ".groundwork/verify.json", ".verify/verify.json"])("verification automatically migrates executable guide references and catalogue bindings from %s", configPath => {
   const root = temporaryDirectory();
-  const check = { command: "cat VERIFY.md && bun scripts/check.mjs", setup: "echo verify.json", expect: "Keep commands", paths: ["VERIFY.md"], covers: ["guide"] };
+  git(root, "init", "--quiet");
+  const check = { command: "grep -q 'Shared context' VERIFY.md && bun scripts/check.mjs", setup: "test -f docs/guide.md", expect: "Keep the guide-backed check working", paths: ["VERIFY.md"], covers: ["guide"] };
   write(root, configPath, JSON.stringify({ checks: { check }, behaviours: {
     guide: { description: "Moved guide", guide: "VERIFY.md#journey" },
     other: { description: "Other guide", guide: "docs/guide.md#journey" },
   }, invariants: { preserved: { description: "Moved invariant guide", guide: "VERIFY.md", checks: ["check"] } } }));
-  write(root, "VERIFY.md", "# Guide\n\n## Journey\nCustom text.\n");
+  write(root, "VERIFY.md", "# Guide\n\nShared context.\n\n## Journey\nCustom text.\n");
   write(root, "docs/guide.md", "# Journey\n");
-  expect(invoke(root, ["init"]).code).toBe(0);
-  const config = JSON.parse(readFileSync(join(root, ".groundwork/verify.json"), "utf8"));
-  expect(config.checks.check).toEqual(check);
-  expect(config.behaviours.guide.guide).toBe(".groundwork/VERIFY.md#journey");
+  write(root, "scripts/check.mjs", 'console.log("Guide-backed check passed");\n');
+  const previous = loadConfig(root);
+  const result = invoke(root, ["verify"]);
+  expect(result.code).toBe(0);
+  expect(result.output).toContain("Guide-backed check passed");
+  const config = loadConfig(root);
+  expect(config.checks.check).toEqual({ ...previous.checks.check,
+    command: "grep -q 'Shared context' .groundwork/guides/project.md && bun scripts/check.mjs", paths: [".groundwork/guides/project.md"] });
+  expect(readFileSync(join(root, config.behaviours.guide.guide.split("#")[0]), "utf8")).toContain("Custom text.");
   expect(config.behaviours.other.guide).toBe("docs/guide.md#journey");
-  expect(config.invariants.preserved.guide).toBe(".groundwork/VERIFY.md");
+  expect(config.invariants.preserved.guide).toBe(".groundwork/guides/project.md");
+  expect(catalogueIssues(config, root)).toEqual([]);
   expect(invoke(root, ["view", "guide"]).code).toBe(0);
+  expect(invoke(root, ["view", "report"]).code).toBe(0);
+  expect(existsSync(join(root, configPath))).toBe(false);
 });
 
-test.each(["verify.json", "VERIFY.md", "legacy-verify.gitignore"])("migration refuses an authored %s collision while preserving source content and evidence", path => {
+test.each(["VERIFY.md", ".groundwork/VERIFY.md", ".verify/VERIFY.md"])("guide discovery migrates %s even before any checks were configured", path => {
+  const root = temporaryDirectory();
+  write(root, path, "# Project context\n\nKeep this setup.\n\n## Saving\nSave, restart, and read the value.\n");
+  expect(invoke(root, ["view", "guide"]).code).toBe(0);
+  expect(loadConfig(root).checks).toEqual({});
+  expect(readFileSync(join(root, ".groundwork/guides/project.md"), "utf8")).toContain("Keep this setup.");
+  const guides = readdirSync(join(root, ".groundwork/guides")).map(name => readFileSync(join(root, ".groundwork/guides", name), "utf8"));
+  expect(guides.some(guide => guide.includes("Save, restart, and read the value."))).toBe(true);
+  const migrated = snapshot(root);
+  expect(invoke(root, ["view", "guide"]).code).toBe(0);
+  expect(snapshot(root)).toEqual(migrated);
+});
+
+test.each(["scripts/check.mjs", "guides/custom.md"])("migration refuses an authored %s collision while preserving source content and evidence", path => {
   const root = temporaryDirectory();
   write(root, "verify.json", '{"checks":{}}\n');
   write(root, "VERIFY.md", "Old guide\n");
   write(root, "AGENTS.md", oldProjectInstruction);
   write(root, ".verify/runs/old/check/output.log", "Old evidence\n");
   write(root, ".verify/latest", "old\n");
-  write(root, ".verify/.gitignore", "*\n");
+  write(root, `.verify/${path}`, "Keep the original.\n");
   const destination = `.groundwork/${path}`;
   write(root, destination, "Keep the destination.\n");
   const result = invoke(root, ["init"]);
@@ -165,8 +199,9 @@ test.each(["verify.json", "VERIFY.md", "legacy-verify.gitignore"])("migration re
   expect(readFileSync(join(root, "verify.json"), "utf8")).toBe('{"checks":{}}\n');
   expect(readFileSync(join(root, "VERIFY.md"), "utf8")).toBe("Old guide\n");
   expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toBe(oldProjectInstruction);
-  expect(readFileSync(join(evidenceStore(root).runs, "old/check/output.log"), "utf8")).toBe("Old evidence\n");
-  expect(readFileSync(evidenceStore(root).latest, "utf8")).toBe("old\n");
+  expect(readFileSync(join(root, `.verify/${path}`), "utf8")).toBe("Keep the original.\n");
+  expect(readFileSync(join(root, ".verify/runs/old/check/output.log"), "utf8")).toBe("Old evidence\n");
+  expect(readFileSync(join(root, ".verify/latest"), "utf8")).toBe("old\n");
   expect(existsSync(join(root, ".groundwork/.gitignore"))).toBe(false);
 });
 
@@ -186,20 +221,22 @@ test("migration rejects case-equivalent planned destinations without moving or o
   expect(existsSync(join(root, "AGENTS.md"))).toBe(false);
 });
 
-test("legacy blanket ignore rules are preserved as an inactive file and cannot hide verification inputs", () => {
+test("migration keeps useful ignore rules active and exposes verification inputs", () => {
   const root = temporaryDirectory();
   git(root, "init", "--quiet");
   write(root, "verify.json", JSON.stringify({ checks: { original: { command: "true", expect: "Original check passes" } } }));
   write(root, "VERIFY.md", "Original guide\n");
-  write(root, ".verify/.gitignore", "# Legacy runtime-only directory\n*\n");
+  write(root, ".verify/.gitignore", "# Private fixture data\n*\n/private-data/\n");
   write(root, ".verify/scripts/check.mjs", "console.log('Reusable helper');\n");
   expect(invoke(root, ["init"]).code).toBe(0);
-  expect(readFileSync(join(root, ".groundwork/legacy-verify.gitignore"), "utf8")).toBe("# Legacy runtime-only directory\n*\n");
-  expect(readFileSync(join(root, ".groundwork/.gitignore"), "utf8")).not.toContain("*");
+  write(root, ".groundwork/private-data/value.txt", "Private fixture data");
+  expect(git(root, "check-ignore", ".groundwork/private-data/value.txt")).toBe(".groundwork/private-data/value.txt");
   const changes = git(root, "status", "--porcelain", "--untracked-files=all");
-  for (const path of ["verify.json", "VERIFY.md", "scripts/check.mjs"]) expect(changes).toContain(`.groundwork/${path}`);
+  for (const path of ["verify.d/", "VERIFY.md", "guides/project.md", "scripts/check.mjs"]) expect(changes).toContain(`.groundwork/${path}`);
+  expect(existsSync(join(root, ".groundwork/legacy-verify.gitignore"))).toBe(false);
+  expect(existsSync(join(root, ".verify"))).toBe(false);
   expect(invoke(root, ["verify"]).code).toBe(0);
-  setChecks(root, { original: { command: "false", expect: "Original check passes" } });
+  writeFileSync(configFiles(root)[0], JSON.stringify({ checks: { original: { command: "false", expect: "Original check passes" } } }));
   const report = invoke(root, ["view", "report"]);
   expect(report.code).toBe(2);
   expect(report.output).toContain("Source changed");
@@ -257,12 +294,21 @@ test("personal install preserves shared instruction symlinks and existing conten
   const instructions = readFileSync(shared, "utf8");
   expect(instructions).toStartWith("Existing personal rules.\n");
   expect(instructions).toEndWith("## Keep this section\nCustom instructions.\n");
-  expect(instructions).toContain("`.groundwork/VERIFY.md` and `.groundwork/verify.json`");
+  expect(instructions).toContain("`.groundwork/VERIFY.md` and `.groundwork/verify.d/`");
   expect(instructions.match(/## Verification workflow/g)).toHaveLength(1);
   expect(realpathSync(join(home, ".agents/skills/verify-work"))).toBe(realpathSync(dirname(cli)));
   expect(invoke(home, ["install"], env).code).toBe(0);
   expect(readFileSync(shared, "utf8")).toBe(instructions);
   expect(realpathSync(join(home, ".config/opencode/AGENTS.md"))).toBe(shared);
+  expect(existsSync(join(home, ".groundwork"))).toBe(false);
+});
+
+test("help leaves an unrelated directory untouched", () => {
+  const root = temporaryDirectory();
+  write(root, "README.md", "An unrelated project.\n");
+  const before = snapshot(root);
+  expect(invoke(root, ["help"]).code).toBe(0);
+  expect(snapshot(root)).toEqual(before);
 });
 
 test("a real persistence failure becomes a passing run after a fix, with both sets of evidence retained", () => {
@@ -314,7 +360,7 @@ process.exit(actual === "dark" ? 0 : 1);
   expect(stale.output).toContain("Source changed");
 });
 
-test.each(["nested", ".groundwork", ".groundwork/scripts", ".groundwork/config"])("named selection from %s includes required checks and discloses omitted checks", cwd => {
+test.each(["nested", ".groundwork", ".groundwork/scripts", ".groundwork/config", ".verify", ".verify/scripts", ".verify/config"])("named selection from %s includes required checks and discloses omitted checks", cwd => {
   const root = project({
     required: { command: "bun -e 'console.error(\"Required failure\"); process.exit(1)'", expect: "Required check passes", required: true },
     feature: { command: "bun .groundwork/scripts/check.mjs", expect: "Run from the project directory" },
@@ -322,7 +368,7 @@ test.each(["nested", ".groundwork", ".groundwork/scripts", ".groundwork/config"]
   });
   write(root, "value.txt", "project-relative input");
   write(root, ".groundwork/scripts/check.mjs", 'import { readFileSync } from "node:fs"; console.log(process.cwd(), readFileSync("value.txt", "utf8"));');
-  mkdirSync(join(root, "nested"));
+  mkdirSync(join(root, cwd), { recursive: true });
   write(root, ".groundwork/config/verify.json", "This is not the project's check configuration");
   const result = invoke(join(root, cwd), ["verify", "feature"]);
   expect(result.code).toBe(1);
@@ -336,8 +382,11 @@ test.each(["nested", ".groundwork", ".groundwork/scripts", ".groundwork/config"]
 
 test("report viewing migrates legacy evidence without blessing its historical source identity", () => {
   const root = temporaryDirectory();
+  const executions = join(temporaryDirectory(), "executions.txt");
   git(root, "init", "--quiet");
-  write(root, "verify.json", JSON.stringify({ checks: { legacy: { command: "true", expect: "Legacy checks run" } } }));
+  write(root, "verify.json", JSON.stringify({ checks: { legacy: {
+    command: `printf 'executed\\n' >> '${executions}'`, expect: "Legacy checks run",
+  } } }));
   expect(invoke(root, ["verify"]).code).toBe(0);
   const previous = saved(root);
   delete previous.data.source.identityVersion;
@@ -345,12 +394,18 @@ test("report viewing migrates legacy evidence without blessing its historical so
   mkdirSync(join(root, ".verify/runs"), { recursive: true });
   renameSync(previous.directory, join(root, ".verify/runs", previous.data.id));
   renameSync(evidenceStore(root).latest, join(root, ".verify/latest"));
-  const historical = invoke(root, ["view", "report"]);
+  const historical = invoke(join(root, ".verify"), ["view", "report"]);
   expect(historical.code).toBe(2);
   expect(historical.output).toContain("Historical source identity");
   expect(saved(root).data.source).toEqual(previous.data.source);
   expect(existsSync(join(root, ".verify/runs"))).toBe(false);
-  write(root, "verify.json", JSON.stringify({ checks: { legacy: { command: "false", expect: "Legacy checks run" } } }));
+  const projectState = snapshot(join(root, ".groundwork"));
+  const evidenceState = snapshot(evidenceStore(root).directory);
+  expect(invoke(root, ["view", "report"]).code).toBe(2);
+  expect(snapshot(join(root, ".groundwork"))).toEqual(projectState);
+  expect(snapshot(evidenceStore(root).directory)).toEqual(evidenceState);
+  expect(readFileSync(executions, "utf8")).toBe("executed\n");
+  writeFileSync(configFiles(root)[0], JSON.stringify({ checks: { legacy: { command: "false", expect: "Legacy checks run" } } }));
   expect(invoke(root, ["verify"]).code).toBe(1);
   expect(saved(root).data.id).not.toBe(previous.data.id);
   expect(invoke(root, ["view", "report"]).code).toBe(1);
@@ -360,7 +415,7 @@ test("report viewing migrates legacy evidence without blessing its historical so
 
 test("named verification schedules plan-bound checks and behaviours, retaining selection reasons", () => {
   const root = project();
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks: {
     chosen: { command: "true", expect: "The requested check runs" },
     bound: { command: "true", expect: "The bound requirement holds" },
     journey: { command: "true", expect: "The planned behaviour works", covers: ["saving"] },
@@ -380,6 +435,39 @@ test("named verification schedules plan-bound checks and behaviours, retaining s
   write(root, planPath, JSON.stringify({ goal: "Invalid plan", requirements: [] }));
   expect(invoke(root, ["verify", "chosen", "--plan", planPath]).code).toBe(2);
   expect(saved(root).data.id).toBe(data.id);
+});
+
+test.each([
+  [".verify/plan.json", ".", ".verify/plan.json"],
+  [".verify/plan.json", ".verify", "plan.json"],
+  [".groundwork/runs/previous/plan.json", ".", ".groundwork/runs/previous/plan.json"],
+])("verification captures %s from %s before migration moves its input", (path, cwd, argument) => {
+  const root = temporaryDirectory();
+  git(root, "init", "--quiet");
+  write(root, ".verify/verify.json", JSON.stringify({ checks: {
+    chosen: { command: "true", expect: "The requested check runs" },
+    bound: { command: "bun driver.mjs", expect: "The supplied requirement is exercised", covers: ["saving"] },
+    unrelated: { command: "false", expect: "An unrelated check" },
+  }, behaviours: { saving: { description: "Save a document" } } }));
+  write(root, "value.txt", "saved value");
+  write(root, "driver.mjs", `import { readFileSync } from "node:fs";
+const plan = JSON.parse(readFileSync(process.env.GROUNDWORK_PLAN, "utf8"));
+if (plan.requirements[0].id !== "saved-outcome" || readFileSync("value.txt", "utf8") !== "saved value") process.exit(1);
+console.log("Saved requirement exercised from the project root");\n`);
+  const plan = { goal: "Keep the supplied verification scope", requirements: [
+    { id: "saved-outcome", expect: "The saved value is observable", checks: ["bound"], behaviours: ["saving"] },
+  ] };
+  write(root, path, JSON.stringify(plan));
+  const result = invoke(join(root, cwd), ["verify", "chosen", "--plan", argument]);
+  expect(result.code).toBe(0);
+  const { data, directory } = saved(root);
+  expect(data.plan).toEqual(plan);
+  expect(data.checks.map(check => check.name)).toEqual(["chosen", "bound"]);
+  expect(data.coverage.map(item => [item.id, item.status])).toEqual([["saved-outcome", "verified"]]);
+  expect(JSON.parse(readFileSync(join(directory, "plan.json"), "utf8"))).toEqual(plan);
+  expect(readFileSync(join(directory, "bound/output.log"), "utf8")).toContain("Saved requirement exercised from the project root");
+  expect(existsSync(join(root, path))).toBe(false);
+  expect(existsSync(join(root, ".verify"))).toBe(false);
 });
 
 test("fragment-only project discovery runs its check from a nested directory", () => {
@@ -464,8 +552,8 @@ test("namespaced scripts and configuration affect report freshness while runtime
   expect(invoke(root, ["view", "report"]).output).toContain("Source changed");
   expect(invoke(root, ["view", "report"]).code).toBe(2);
   expect(invoke(root, ["verify"]).code).toBe(0);
-  const config = readFileSync(join(root, ".groundwork/verify.json"), "utf8");
-  write(root, ".groundwork/verify.json", `${config}\n`);
+  const config = readFileSync(join(root, ".groundwork/verify.d/feature.json"), "utf8");
+  write(root, ".groundwork/verify.d/feature.json", `${config}\n`);
   expect(invoke(root, ["view", "report"]).code).toBe(2);
 });
 
@@ -485,7 +573,7 @@ test("malformed configuration is rejected before executing commands", () => {
 test("feature maps show declared dependency direction and useful pointers without inferring shared-check or path links", () => {
   const root = temporaryDirectory();
   write(root, "docs/map.md", "# Saving\n");
-  write(root, ".groundwork/verify.json", JSON.stringify({
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({
     checks: { journey: { command: "printf ran > executed", expect: "Save a document", covers: ["saving", "unrelated"] } },
     behaviours: {
       saving: { description: "Save\nrévisions", entry: "app save\n<file>", paths: ["src/save/**", "src/shared.mjs", "src/two  spaces.mjs"], guide: "docs/map.md#saving", dependsOn: ["storage", "session"] },
@@ -523,7 +611,7 @@ test("feature maps show declared dependency direction and useful pointers withou
   expect(existsSync(join(root, ".groundwork/latest"))).toBe(false);
 });
 
-test.each([".groundwork/verify.json", "verify.json"])("feature maps discover %s from nested directories without Git and preserve project state", configPath => {
+test.each([".groundwork/verify.d/feature.json", ".groundwork/verify.json", "verify.json", ".verify/verify.json"])("navigation discovers %s inside metadata directories, migrates once, and remains read-only", configPath => {
   const root = temporaryDirectory();
   const config = JSON.stringify({
     checks: { forbidden: { command: "printf ran > executed", expect: "Run only when requested", required: true, covers: ["saving"] } },
@@ -533,37 +621,44 @@ test.each([".groundwork/verify.json", "verify.json"])("feature maps discover %s 
   write(root, "docs/map.md", "# Saving\n");
   write(root, ".groundwork/latest", "previous\n");
   write(root, ".groundwork/runs/previous/result.json", "Retain this exact evidence.\n");
-  write(root, ".groundwork/config/verify.json", "Not the project config");
+  write(root, ".verify/config/verify.json", "Not the project config");
   mkdirSync(join(root, "src/nested"), { recursive: true });
-  for (const cwd of ["src/nested", ".groundwork/config"]) {
-    const result = invoke(join(root, cwd), ["map", "saving"]);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("Narrative guide: docs/map.md#saving");
-  }
-  expect(readFileSync(join(root, configPath), "utf8")).toBe(config);
-  expect(readFileSync(join(root, "docs/map.md"), "utf8")).toBe("# Saving\n");
-  expect(readFileSync(join(root, ".groundwork/latest"), "utf8")).toBe("previous\n");
-  expect(readFileSync(join(root, ".groundwork/runs/previous/result.json"), "utf8")).toBe("Retain this exact evidence.\n");
-  expect(readdirSync(join(root, ".groundwork/runs"))).toEqual(["previous"]);
-  expect(existsSync(evidenceStore(root).directory)).toBe(false);
-  for (const path of ["executed", ".git", "AGENTS.md", ".groundwork/VERIFY.md", ".groundwork/.gitignore"]) {
+  const first = invoke(join(root, ".verify/config"), ["map", "saving"]);
+  expect(first.code).toBe(0);
+  expect(first.output).toContain("Narrative guide: docs/map.md#saving");
+  expect(loadConfig(root).checks.forbidden.command).toBe("printf ran > executed");
+  const store = evidenceStore(root);
+  expect(readFileSync(store.latest, "utf8")).toBe("previous\n");
+  expect(readFileSync(join(store.runs, "previous/result.json"), "utf8")).toBe("Retain this exact evidence.\n");
+  for (const path of ["executed", "verify.json", ".verify", ".groundwork/verify.json", ".groundwork/runs", ".groundwork/latest"]) {
     expect(existsSync(join(root, path))).toBe(false);
   }
-  if (configPath === "verify.json") expect(existsSync(join(root, ".groundwork/verify.json"))).toBe(false);
+  const projectState = snapshot(root);
+  const evidenceState = snapshot(store.directory);
+  for (const cwd of ["src/nested", ".groundwork/config"]) {
+    for (const args of [["map", "saving"], ["view", "guide", "saving"]]) {
+      const result = invoke(join(root, cwd), args);
+      expect(result.code).toBe(0);
+      expect(result.output).toContain("docs/map.md#saving");
+      expect(snapshot(root)).toEqual(projectState);
+      expect(snapshot(store.directory)).toEqual(evidenceState);
+    }
+  }
 });
 
 test("feature maps explain empty and unmapped catalogues without initializing a project", () => {
   const root = temporaryDirectory();
   expect(invoke(root, ["map"]).code).toBe(2);
   expect(readdirSync(root)).toEqual([]);
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {} }));
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks: {} }));
   const empty = invoke(root, ["map"]);
   expect(empty.code).toBe(0);
   expect(empty.output).toContain("No behaviours recorded");
-  expect(empty.output).toContain("Add behaviours to .groundwork/verify.json");
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+  expect(empty.output).toContain(".groundwork/verify.d/<feature>.json");
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks: {}, behaviours: {
     planned: { description: "Import a document", entry: " \n ", paths: [] },
   } }));
+  const before = snapshot(root);
   const unmapped = invoke(root, ["map", "planned"]);
   expect(unmapped.code).toBe(0);
   expect(unmapped.output).toContain("Used by (recorded): none recorded");
@@ -572,12 +667,12 @@ test("feature maps explain empty and unmapped catalogues without initializing a 
   expect(unmapped.output).toContain("Implementation paths: not mapped");
   expect(unmapped.output).toContain("Covering checks: not mapped");
   expect(unmapped.output).toContain("Narrative guide: not recorded");
-  expect(readdirSync(join(root, ".groundwork"))).toEqual(["verify.json"]);
+  expect(snapshot(root)).toEqual(before);
 });
 
 test("feature lookup prefers exact IDs, supports unique ID or description queries, and rejects ambiguity and flags", () => {
   const root = temporaryDirectory();
-  write(root, ".groundwork/verify.json", JSON.stringify({
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({
     checks: { policy: { command: "true", expect: "Release policy holds" } },
     behaviours: {
       save: { description: "Write a document" },
@@ -617,7 +712,7 @@ test("feature lookup prefers exact IDs, supports unique ID or description querie
 
 test("cyclic feature maps remain finite and show both direct directions", () => {
   const root = temporaryDirectory();
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks: {}, behaviours: {
     first: { description: "First feature", dependsOn: ["second"] },
     second: { description: "Second feature", dependsOn: ["first"] },
   } }));
@@ -633,7 +728,7 @@ test("cyclic feature maps remain finite and show both direct directions", () => 
 test("feature maps retain diagrams while reporting stale guides for exactly the displayed behaviours", () => {
   const root = temporaryDirectory();
   write(root, "docs/map.md", "# Current\n");
-  write(root, ".groundwork/verify.json", JSON.stringify({ checks: {}, behaviours: {
+  write(root, ".groundwork/verify.d/feature.json", JSON.stringify({ checks: {}, behaviours: {
     saving: { description: "Save a document", guide: "docs/map.md#old-save", dependsOn: ["storage"] },
     dashboard: { description: "Save from a dashboard", guide: "docs/missing.md", dependsOn: ["saving"] },
     storage: { description: "Store a document", guide: "docs/map.md#old-storage" },
@@ -699,8 +794,8 @@ test("an interrupted attempt replaces an earlier success with an incomplete late
   expect(invoke(root, ["verify"]).code).toBe(0);
   const previous = saved(root);
   setChecks(root, { check: { command: "bun -e 'console.log(\"READY\"); setTimeout(() => {}, 200)'", expect: "Complete the check" } });
-  const child = spawn(process.execPath, [cli, "verify"], { cwd: root, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
+  const child = spawn(realBun, [cli, "verify"], { cwd: root, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
   let output = "";
   child.stdout.on("data", chunk => {
     output += chunk;

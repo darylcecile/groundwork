@@ -1,0 +1,17 @@
+{
+  "behaviours": {
+    "feature-map": {
+      "description": "View declared feature dependencies, consumers, source paths and verification pointers",
+      "paths": [
+        "lib/map.mjs",
+        "test/verify.test.mjs",
+        "test/package.test.mjs"
+      ],
+      "entry": "groundwork map [feature]",
+      "guide": ".groundwork/guides/inspect-feature-relationships.md#inspect-feature-relationships",
+      "dependsOn": [
+        "catalogue"
+      ]
+    }
+  }
+}

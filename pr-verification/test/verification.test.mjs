@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,13 +7,15 @@ import { fileURLToPath } from "node:url";
 import { formatComment, marker, publishComment, validateResult, verdict } from "../scripts/report.mjs";
 import { evidenceStore } from "../../lib/store.mjs";
 import { refreshEvidence } from "../../lib/model.mjs";
+import { catalogueIssues, loadConfig } from "../../lib/config.mjs";
 
 const runner = fileURLToPath(new URL("../scripts/verify.mjs", import.meta.url));
+const realBun = realpathSync(process.execPath);
 const temporary = [];
 let previousStateHome;
 beforeEach(() => {
   previousStateHome = process.env.GROUNDWORK_STATE_HOME;
-  const state = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "pr-verification-state-"));
+  const state = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "pr-verification-state-")));
   temporary.push(state);
   process.env.GROUNDWORK_STATE_HOME = state;
 });
@@ -35,7 +37,7 @@ function git(root, ...args) {
 }
 
 function fixture(agent = "valid") {
-  const root = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "pr-verification-"));
+  const root = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "pr-verification-")));
   temporary.push(root);
   const project = join(root, "project");
   const output = join(root, "evidence");
@@ -48,7 +50,7 @@ function fixture(agent = "valid") {
   const eventPath = join(root, "event.json");
   write(eventPath, JSON.stringify(event));
   const fake = join(root, "bin", "copilot");
-  write(fake, `#!${process.execPath}
+  write(fake, `#!${realBun}
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -79,7 +81,7 @@ writeFileSync(join(output, "agent.json"), JSON.stringify({
 `);
   chmodSync(fake, 0o755);
   return { root, project, output, event, env: {
-    ...process.env, PATH: `${dirname(fake)}:${dirname(process.execPath)}:${process.env.PATH}`, TEST_AGENT: agent,
+    ...process.env, PATH: `${dirname(fake)}:${dirname(realBun)}:${process.env.PATH}`, TEST_AGENT: agent,
     GITHUB_EVENT_PATH: eventPath, GITHUB_REPOSITORY: "consumer/project", GITHUB_ACTIONS: "true",
     GITHUB_OUTPUT: join(root, "github-output"), COPILOT_GITHUB_TOKEN: "test-copilot-credential",
     PR_VERIFY_REPOSITORY: project, PR_VERIFY_OUTPUT: output, PR_VERIFY_CHECKS: "true",
@@ -89,7 +91,7 @@ writeFileSync(join(output, "agent.json"), JSON.stringify({
 }
 
 function run(value, overrides = {}) {
-  const processResult = spawnSync(process.execPath, [runner], { env: { ...value.env, ...overrides }, encoding: "utf8" });
+  const processResult = spawnSync(realBun, [runner], { env: { ...value.env, ...overrides }, encoding: "utf8" });
   return { code: processResult.status, output: processResult.stdout + processResult.stderr,
     report: JSON.parse(readFileSync(join(value.output, "result.json"), "utf8")) };
 }
@@ -114,6 +116,7 @@ test.each(["direct", "symlink"])("runs checks and the agent from a %s repository
   expect(JSON.parse(readFileSync(join(value.output, "project/test-results/response.json"), "utf8"))).toEqual({ ok: true });
   expect(readFileSync(join(value.output, "checks.log"), "utf8")).toContain("Checks observed success");
   expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(true);
+  expect(existsSync(join(value.project, ".groundwork"))).toBe(false);
 });
 
 test("failed configured checks remain failures after positive agent observations", () => {
@@ -159,7 +162,7 @@ test("planning failure leaves configured check results available but cannot prod
   expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
 });
 
-test.each([".groundwork/verify.json", "verify.json"])("project catalogue at %s uses the shared runner when the workflow omits a command block", path => {
+test.each([".groundwork/verify.d/feature.json", ".groundwork/verify.json", "verify.json", ".verify/verify.json"])("project catalogue at %s uses the shared runner when the workflow omits a command block", path => {
   const value = fixture();
   write(join(value.project, path), JSON.stringify({
     checks: {
@@ -173,6 +176,29 @@ test.each([".groundwork/verify.json", "verify.json"])("project catalogue at %s u
   expect(result.code).toBe(1);
   expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature", "boundary"]);
   expect(result.report.verification.coverage.find(item => item.id === "invariant:boundary").status).toBe("failed");
+  expect(result.report.problems).toEqual([]);
+});
+
+test("PR preparation migrates legacy metadata before catalogue, changed-path selection and source capture", () => {
+  const value = fixture();
+  git(value.project, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "--allow-empty", "-qm", "Candidate revision");
+  write(join(value.project, ".verify/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "bun .verify/scripts/check.mjs", expect: "The existing driver still works", paths: [".groundwork/verify.d/**"], covers: ["feature"] },
+  }, behaviours: { feature: { description: "The feature works", guide: ".verify/VERIFY.md#journey" } } }));
+  write(join(value.project, ".verify/VERIFY.md"), "# Project context\n\nKeep shared setup.\n\n## Journey\nExercise the existing feature.\n");
+  write(join(value.project, ".verify/scripts/check.mjs"), 'console.log("Legacy driver preserved");\n');
+  const result = run(value, { PR_VERIFY_CHECKS: "" });
+  expect(result.code).toBe(0);
+  expect(result.report.problems).toEqual([]);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature"]);
+  expect(result.report.selection.reasons.feature.some(reason => reason.startsWith("changed path: .groundwork/verify.d/"))).toBe(true);
+  expect(readFileSync(join(value.output, "feature/output.log"), "utf8")).toContain("Legacy driver preserved");
+  const config = loadConfig(value.project);
+  expect(catalogueIssues(config, value.project)).toEqual([]);
+  expect(readFileSync(join(value.project, config.behaviours.feature.guide.split("#")[0]), "utf8")).toContain("Exercise the existing feature.");
+  expect(readFileSync(join(value.project, ".groundwork/guides/project.md"), "utf8")).toContain("Keep shared setup.");
+  expect(existsSync(join(value.project, ".verify"))).toBe(false);
+  expect(existsSync(join(value.project, ".groundwork/verify.json"))).toBe(false);
 });
 
 test("default PR evidence uses external project storage and its nested root-relative driver", () => {
@@ -182,12 +208,11 @@ test("default PR evidence uses external project storage and its nested root-rela
   write(join(project, ".groundwork/scripts/check.mjs"), `import { readFileSync } from "node:fs";
 if (readFileSync("app.txt", "utf8") !== "nested project\\n") process.exit(1);
 console.log("Nested project driver passed");\n`);
-  write(join(project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command: "bun .groundwork/scripts/check.mjs", expect: "The nested project driver runs from its project root" },
   } }));
-  write(join(project, "verify.json"), "invalid legacy configuration must not win");
   const env = { ...value.env, PR_VERIFY_OUTPUT: "", PR_VERIFY_DIRECTORY: "packages/app", PR_VERIFY_CHECKS: "" };
-  const execute = () => spawnSync(process.execPath, [runner], { env, encoding: "utf8" });
+  const execute = () => spawnSync(realBun, [runner], { env, encoding: "utf8" });
   const first = execute();
   expect(first.status).toBe(0);
   const runs = evidenceStore(project).runs;
@@ -202,7 +227,7 @@ console.log("Nested project driver passed");\n`);
   expect(execute().status).toBe(0);
   const previousRuns = readdirSync(runs);
   expect(previousRuns).toHaveLength(2);
-  const changed = spawnSync(process.execPath, [runner], { env: { ...env, TEST_AGENT: "mutate" }, encoding: "utf8" });
+  const changed = spawnSync(realBun, [runner], { env: { ...env, TEST_AGENT: "mutate" }, encoding: "utf8" });
   expect(changed.status).toBe(2);
   const changedRun = readdirSync(runs).find(id => !previousRuns.includes(id));
   const changedReport = JSON.parse(readFileSync(join(runs, changedRun, "result.json"), "utf8"));
@@ -212,7 +237,7 @@ console.log("Nested project driver passed");\n`);
 test("completed automated requirements skip the verification agent without requiring its credential", () => {
   const value = fixture("exit");
   const command = 'printf "Automated proof\\n"';
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command, expect: "The requested behaviour works" },
   } }));
   write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify the requested behaviour", requirements: [
@@ -233,9 +258,63 @@ test("completed automated requirements skip the verification agent without requi
   expect(verdict(unavailable)).toBe("inconclusive");
 });
 
+test.each([".verify/plan.json", ".groundwork/runs/previous/plan.json"])("PR verification captures supplied %s before metadata and evidence migration", path => {
+  const value = fixture("exit");
+  write(join(value.project, ".verify/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "bun driver.mjs", expect: "The supplied requirement is exercised", covers: ["saving"] },
+    unrelated: { command: "false", expect: "An unrelated check" },
+  }, behaviours: { saving: { description: "Save a document" } } }));
+  write(join(value.project, "driver.mjs"), `import { readFileSync } from "node:fs";
+const plan = JSON.parse(readFileSync(process.env.GROUNDWORK_PLAN, "utf8"));
+if (plan.requirements[0].id !== "saved-outcome" || readFileSync("app.txt", "utf8") !== "candidate implementation\\n") process.exit(1);
+console.log("Supplied requirement exercised");\n`);
+  const plan = { goal: "Keep the supplied verification scope", requirements: [
+    { id: "saved-outcome", expect: "The saved behaviour holds", checks: ["feature"], behaviours: ["saving"] },
+  ] };
+  write(join(value.project, path), JSON.stringify(plan));
+  const result = run(value, { PR_VERIFY_PLAN: path, COPILOT_GITHUB_TOKEN: "" });
+  expect(result.code).toBe(0);
+  expect(result.report.problems).toEqual([]);
+  expect(result.report.verification.plan).toEqual(plan);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature", "configured-checks"]);
+  expect(result.report.verification.coverage.map(item => [item.id, item.status])).toEqual([["saved-outcome", "verified"]]);
+  expect(result.report.agent.execution.skipped).toBe("complete");
+  expect(JSON.parse(readFileSync(join(value.output, "plan.json"), "utf8"))).toEqual(plan);
+  expect(readFileSync(join(value.output, "feature/output.log"), "utf8")).toContain("Supplied requirement exercised");
+  expect(existsSync(join(value.project, path))).toBe(false);
+});
+
+test.each(["outside", "symlink", "missing", "invalid"])("an %s supplied PR plan retains its saved error and does not execute checks", mode => {
+  const value = fixture();
+  let path = ".verify/plan.json";
+  let message;
+  if (mode === "outside" || mode === "symlink") {
+    const outside = join(value.root, "outside.json");
+    write(outside, "This must not be read as a plan.");
+    if (mode === "outside") {
+      path = "../outside.json";
+      message = "The plan input must be a relative file within the project.";
+    } else {
+      mkdirSync(join(value.project, ".verify"));
+      symlinkSync(outside, join(value.project, path));
+      message = "Path leaves its evidence directory";
+    }
+  } else if (mode === "missing") message = "ENOENT";
+  else {
+    write(join(value.project, path), "null");
+    message = "A verification plan needs a goal and at least one requirement.";
+  }
+  const result = run(value, { PR_VERIFY_PLAN: path, PR_VERIFY_CHECKS: "touch executed" });
+  expect(result.code).toBe(2);
+  expect(result.report.pullRequest).toBe(42);
+  expect(result.report.problems.join(" ")).toContain(message);
+  expect(existsSync(join(value.project, "executed"))).toBe(false);
+  expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
+});
+
 test.each(["assertion", "review", "unspecified-kind"])("required review invokes the agent and distinguishes %s observations", kind => {
   const value = fixture(kind);
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command: "true", expect: "The automated behaviour works", covers: ["feature"] },
   }, behaviours: { feature: { description: "The feature works" } } }));
   write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify and review the behaviour", requirements: [
@@ -253,7 +332,7 @@ test.each(["assertion", "review", "unspecified-kind"])("required review invokes 
 
 test("the verification frontier supplies only missing requirements alongside completed evidence", () => {
   const value = fixture();
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command: "true", expect: "The automated outcome holds" },
   } }));
   write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify both outcomes", requirements: [
@@ -271,7 +350,7 @@ test("the verification frontier supplies only missing requirements alongside com
 
 test("an evidence-backed review from a completed check closes the frontier without another agent pass", () => {
   const value = fixture("exit");
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     review: { command: "bun .groundwork/scripts/review.mjs", expect: "The requested contract has been reviewed", result: "result.json" },
   } }));
   write(join(value.project, ".groundwork/scripts/review.mjs"), `import { writeFileSync } from "node:fs";
@@ -299,7 +378,7 @@ test("a workflow override includes required, planned, and active invariant check
   const value = fixture("exit");
   git(value.project, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "--allow-empty", "-qm", "Candidate revision");
   write(join(value.project, "app.txt"), "changed candidate implementation\n");
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     required: { command: "true", expect: "The required check passes", required: true },
     planned: { command: "true", expect: "The planned check passes" },
     journey: { command: "true", expect: "The planned behaviour works", covers: ["feature"] },
@@ -326,7 +405,7 @@ test("a workflow override includes required, planned, and active invariant check
 
 test("a workflow block is retained when it only contains a catalogue command as part of a larger block", () => {
   const value = fixture();
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command: "true", expect: "A required catalogue check passes", required: true },
   } }));
   const result = run(value, { PR_VERIFY_CHECKS: "true\nprintf 'Workflow-specific assertion\\n'" });
@@ -337,7 +416,7 @@ test("a workflow block is retained when it only contains a catalogue command as 
 
 test("explicit PR output remains a portable bundle when matching check receipts are reused", () => {
   const value = fixture();
-  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+  write(join(value.project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
     feature: { command: "printf 'Retained assertion\\n'", expect: "The automated result is retained", reuse: true },
   } }));
   write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Retain portable proof", requirements: [
@@ -420,7 +499,7 @@ test("a reused evidence directory preserves the earlier result and refuses a new
   const value = fixture();
   expect(run(value).code).toBe(0);
   const previous = readFileSync(join(value.output, "result.json"), "utf8");
-  const execution = spawnSync(process.execPath, [runner], { env: value.env, encoding: "utf8" });
+  const execution = spawnSync(realBun, [runner], { env: value.env, encoding: "utf8" });
   expect(execution.status).toBe(2);
   expect(readFileSync(join(value.output, "result.json"), "utf8")).toBe(previous);
 });

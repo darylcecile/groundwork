@@ -33,14 +33,13 @@ Open the project in Copilot or OpenCode and say:
 
 > Use verify-work to set this project up. Reuse its existing tools and start with one real user journey. Then help me make a small change and show evidence that it works.
 
-The agent explores a real journey and runs `groundwork init`. Project-owned verification lives under `.groundwork/`:
+The agent explores a real journey and handles setup and migration as part of its work. Project-owned verification lives under `.groundwork/`:
 
-- **`VERIFY.md`:** a thin entry point for setup, shared constraints and catalogue navigation.
-- **`verify.json`:** shared executable checks, context and enforced project invariants.
-- **`guides/<feature>.md` or `maps/<area>.md`:** bounded journey instructions and subsystem explanations.
-- **`verify.d/<feature>.json`:** feature checks and catalogue entries, discovered automatically alongside the shared configuration.
+- **`VERIFY.md`:** a small bootstrap linking project context and catalogue discovery.
+- **`guides/` and `maps/`:** shared setup, constraints, bounded journeys and subsystem explanations.
+- **`verify.d/*.json`:** executable checks, context and catalogue entries, discovered automatically.
 
-Root **`AGENTS.md`** points agents to the workflow. Commit reusable guides, configuration and `.groundwork/.gitignore` with the project when ready. Existing configurations remain valid. A feature can add its own guide and configuration fragment without editing a central include list or guide index.
+Root **`AGENTS.md`** points agents to the workflow. Commit reusable guides, configuration and `.groundwork/.gitignore` with the project when ready. Existing metadata is converted automatically. A feature can add its own guide and configuration fragment without editing a central include list or guide index.
 
 Use the [`explain` skill](skills/explain/SKILL.md) for concise, friendly technical explanations that reduce jargon while preserving meaning.
 
@@ -50,7 +49,7 @@ Continue giving the agent tasks normally. For example: **“Make my theme select
 
 ## Behaviour Catalogue
 
-The merged catalogue from `.groundwork/verify.json` and `.groundwork/verify.d/*.json` connects stable behaviour IDs to descriptions, source `paths`, entry points (`entry`) and guides (`guide`). Named executable checks link to the behaviours they actually assert through `covers`. For the theme request, a `theme-persistence` behaviour could point to the preferences code and a restart guide, with a `theme-persists` check covering it. References are validated across files; duplicate IDs are errors rather than overrides.
+The merged catalogue from `.groundwork/verify.d/*.json` connects stable behaviour IDs to descriptions, source `paths`, entry points (`entry`) and guides (`guide`). Named executable checks link to the behaviours they actually assert through `covers`. For the theme request, a `theme-persistence` behaviour could point to the preferences code and a restart guide, with a `theme-persists` check covering it. References are validated across files; duplicate IDs are errors rather than overrides.
 
 Project invariants record constraints that must keep holding, such as malformed settings never overwriting valid preferences. Each invariant names real enforcing `checks` and can declare a path scope. A behaviour may initially have no mapped check; the catalogue exposes that verification gap.
 
@@ -67,7 +66,7 @@ groundwork map theme-persistence  # Focus on one feature and its direct neighbou
 
 A feature is a behaviour in the catalogue. The focused ASCII view shows what it depends on, which features use it, and the displayed features' entry points, implementation paths, covering checks and guides. Use an exact behaviour ID or a unique case-insensitive match in an ID or description; ambiguous queries list the matching IDs. The overview includes all recorded feature relationships.
 
-Relationships are stored as an optional `dependsOn` array of behaviour IDs. For example, theme persistence could depend on settings storage. `explore` records direct connections supported by source evidence and keeps the explanation in the narrative map. Consumers are derived from those same links. Missing relationships are shown as unrecorded; viewing a map is read-only and does not run verification checks.
+Relationships are stored as an optional `dependsOn` array of behaviour IDs. For example, theme persistence could depend on settings storage. `explore` records direct connections supported by source evidence and keeps the explanation in the narrative map. Consumers are derived from those same links. Missing relationships are shown as unrecorded. The command prepares older metadata when needed, then displays the map without running verification checks.
 
 The catalogue helps locate a behaviour; maps explain how its subsystem fits together. The [`explore` skill](skills/explore/SKILL.md) traces entry points, owning modules, data and state, dependencies, constraints, relevant history and verification paths, citing sources and recording gaps. It uses existing project tools for runtime observations when needed.
 
@@ -169,11 +168,10 @@ Start with one complete loop: reproduce a problem, fix it, rerun the same behavi
 ```text
 AGENTS.md                     Agent-discoverable workflow reference
 .groundwork/
-  VERIFY.md                   Stable setup, shared constraints and navigation
-  verify.json                 Shared checks, context and invariants
-  verify.d/                   Auto-discovered feature configuration fragments
-  guides/                     Bounded feature journeys
-  .gitignore                  Ignore local working files and legacy evidence
+  VERIFY.md                   Bootstrap to project context and catalogue discovery
+  verify.d/                   Auto-discovered checks, context and catalogue entries
+  guides/                     Project context and bounded feature journeys
+  .gitignore                  Ignore local working files
   scripts/                    Reusable Groundwork-owned drivers and helpers
   config/                     Supporting tool configs, loaded explicitly
   maps/                       Reusable subsystem and feature maps
@@ -184,7 +182,7 @@ AGENTS.md                     Agent-discoverable workflow reference
 
 Create supporting directories only when needed. Reuse existing project tools; new Groundwork-owned helpers and configs belong here. Commands still run from the project root, and check path patterns and catalogue guide references are project-root-relative. Tools with mandatory discovery locations, such as [GitHub Actions' `.github/workflows/`](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows), retain those locations.
 
-Keep `.groundwork/` itself tracked: changes to its guide, checks, scripts and configs must participate in source freshness and change-aware selection. Its own `.gitignore` handles generated output without changing the project's root ignore file.
+Keep `.groundwork/` itself tracked: changes to its guides, checks, scripts and configs must participate in source freshness and change-aware selection. Its own `.gitignore` handles local working files.
 
 ### Evidence storage
 
@@ -192,11 +190,9 @@ Generated runs and reusable receipts live outside the checkout. The storage root
 
 ### Existing projects
 
-`groundwork init`, `groundwork verify` and `groundwork view report` automatically preserve `.groundwork/runs`, `.verify/runs` and their latest pointers in the external store. Generated originals are removed only after preservation. Migrated reports remain historical evidence; migration does not turn them into reusable receipts or upgrade their source identity.
+Normal project commands (`init`, `verify`, `view guide`, `view report` and `map`) automatically prepare older metadata. PR verification does the same before loading configuration and capturing source. Configuration and authored guidance move into active `verify.d/` fragments and guides, preserving IDs, bindings, check order and instructions. Whole-document command inputs stay together in one active file. Guide and instruction references are updated and superseded files are removed. The agent handles project-specific repairs from repository context.
 
-Run `groundwork init` to move legacy authored files into `.groundwork/` and refresh the generated `AGENTS.md` instruction. It preserves custom content and refuses conflicting destinations. A moved root guide gets updated catalogue references; review its custom relative Markdown links. Existing authored guides are preserved, not automatically split into features. Put new journeys in bounded guides or maps and add feature fragments as needed.
-
-The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root `verify.json` supported when the canonical file is absent. Both load `.groundwork/verify.d/*.json` automatically and also support projects configured entirely through fragments.
+Legacy runs and latest pointers move to the external evidence store before their originals are removed. Historical reports retain their original identity. Preparation is idempotent; subsequent reads leave the converted metadata unchanged. Portal browsing and configuration reads do not perform migration.
 
 ## Further reading
 

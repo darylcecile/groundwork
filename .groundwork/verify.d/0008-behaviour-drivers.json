@@ -1,0 +1,13 @@
+{
+  "behaviours": {
+    "drivers": {
+      "description": "Exercise lifecycle drivers, retain repeated trials, and compare source revisions",
+      "paths": [
+        "lib/runner.mjs",
+        "test/runner.test.mjs"
+      ],
+      "entry": "groundwork verify / groundwork verify --base <ref>",
+      "guide": ".groundwork/guides/exercise-a-driver-and-compare-revisions.md#exercise-a-driver-and-compare-revisions"
+    }
+  }
+}

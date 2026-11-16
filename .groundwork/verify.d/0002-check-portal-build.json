@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "portal-build": {
+      "command": "bun run check:portal",
+      "expect": "The portal typechecks and its distributed server and browser assets match the source",
+      "paths": [
+        "portal/**",
+        "lib/**",
+        "package.json",
+        "bun.lock"
+      ]
+    }
+  }
+}

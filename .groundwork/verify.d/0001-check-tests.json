@@ -1,0 +1,18 @@
+{
+  "checks": {
+    "tests": {
+      "command": "bun test",
+      "expect": "The CLI and PR verification preserve setup and accurately report check results, behaviour, failures, and evidence",
+      "required": true,
+      "covers": [
+        "adoption",
+        "coverage",
+        "catalogue",
+        "feature-map",
+        "drivers",
+        "pr-verification",
+        "portal"
+      ]
+    }
+  }
+}

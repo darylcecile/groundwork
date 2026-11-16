@@ -45,7 +45,7 @@ A reusable receipt preserves an actual check result with its inputs and evidence
 
 ## The project contribution
 
-Each adopted project supplies a thin `.groundwork/VERIFY.md` for setup, shared constraints and catalogue navigation, linked from root `AGENTS.md`. Shared checks live in `.groundwork/verify.json`; feature checks and catalogue entries live in auto-discovered `.groundwork/verify.d/<feature>.json`. Put each new journey in a bounded `.groundwork/guides/<feature>.md` or subsystem map:
+The agent maintains project verification as part of ordinary work. Root `AGENTS.md` links to the small `.groundwork/VERIFY.md` bootstrap; shared setup, constraints and journeys live in `.groundwork/guides/` or subsystem maps. Checks, context and catalogue entries live in auto-discovered `.groundwork/verify.d/*.json`. Each journey explains:
 
 1. What does this feature do, and where is its implementation?
 2. What starting state and running services does it need?
@@ -57,9 +57,11 @@ The `explore` skill establishes those relationships. During adoption or an expli
 
 Use `groundwork map [feature]` to inspect the catalogue as an ASCII overview or focused relationship map. Source-backed direct dependencies live in each behaviour's optional `dependsOn` list; the CLI derives consumers from those links. Keep their rationale in the narrative map and use it to choose further investigation and verification.
 
-Reuse the project's existing browser/device tooling, test runner, API client and development commands. For reusable journeys that lack automation, create a small project-owned driver under `.groundwork/scripts/` and register it in the feature's configuration fragment, preserving existing bindings; put supporting configs in `.groundwork/config/`. Existing canonical and legacy configurations remain supported. If no verification configuration exists, invoke the existing runner or script directly. A tiny one-off can use a single batched tool invocation without adding a framework or integration suite.
+Reuse the project's existing browser/device tooling, test runner, API client and development commands. For reusable journeys that lack automation, create a small project-owned driver under `.groundwork/scripts/` and register it in the feature's configuration fragment, preserving existing bindings; put supporting configs in `.groundwork/config/`. Set up missing verification with `groundwork init` and the existing runner. A tiny one-off can use a single batched tool invocation without adding a framework or integration suite.
 
-Return to the model for decisions, failure diagnosis or evidence review. Keep per-action narration and successful step logs out of model context; retain full diagnostic logs and artifacts and return concise outcomes, failed assertions and evidence paths. Keep local plans, notes and scratch files under `.groundwork/`; generated evidence goes to the external state store. Update only the feature guide or bounded map whose enduring behaviour changed. Automatic migration preserves existing authored guides without interpreting or splitting their contents.
+Return to the model for decisions, failure diagnosis or evidence review. Keep per-action narration and successful step logs out of model context; retain full diagnostic logs and artifacts and return concise outcomes, failed assertions and evidence paths. Keep local plans, notes and scratch files under `.groundwork/`; generated evidence goes to the external state store. Update the feature guide or bounded map whose enduring behaviour changed.
+
+Project commands automatically convert older configuration and guide sections into active fragments and guides, preserving instructions, links, IDs, bindings and execution order. The agent resolves metadata conflicts using repository context and continues the task. Users can keep working through normal chat.
 
 ## The handoff
 

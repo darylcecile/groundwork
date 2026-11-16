@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,11 +9,12 @@ import { changedFiles, runChecks, source, sourceMatches } from "../lib/runner.mj
 import { evidenceStore } from "../lib/store.mjs";
 
 const cli = fileURLToPath(new URL("../skills/verify-work/verify.mjs", import.meta.url));
+const realBun = realpathSync(process.execPath);
 const projects = [];
 let previousStateHome;
 beforeEach(() => {
   previousStateHome = process.env.GROUNDWORK_STATE_HOME;
-  const state = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-runner-state-"));
+  const state = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-runner-state-")));
   projects.push(state);
   process.env.GROUNDWORK_STATE_HOME = state;
 });
@@ -35,18 +36,18 @@ function git(root, ...args) {
 }
 
 function invoke(root, ...args) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8",
-    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
+  const result = spawnSync(realBun, [cli, ...args], { cwd: root, encoding: "utf8",
+    env: { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
   return { code: result.status, output: result.stdout + result.stderr };
 }
 
 function project(config) {
-  const root = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-runner-"));
+  const root = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-runner-")));
   projects.push(root);
   git(root, "init", "--quiet");
   const initialized = invoke(root, "init");
   if (initialized.code !== 0) throw new Error(initialized.output);
-  write(root, ".groundwork/verify.json", config);
+  write(root, ".groundwork/verify.d/feature.json", config);
   return root;
 }
 
@@ -66,7 +67,7 @@ function commit(root) {
 test.each(["", "packages/app"])("source matching ignores only reserved runtime paths in a %s project", prefix => {
   const root = project({ checks: {} });
   const cwd = join(root, prefix);
-  const tracked = [".groundwork/verify.json", ".groundwork/VERIFY.md", ".groundwork/scripts/check.mjs", ".groundwork/config/fixture.json"];
+  const tracked = [".groundwork/verify.d/feature.json", ".groundwork/VERIFY.md", ".groundwork/scripts/check.mjs", ".groundwork/config/fixture.json"];
   const runtime = [".groundwork/runs/old/result.json", ".groundwork/latest", ".groundwork/plans/task.json",
     ".groundwork/tasks/task.md", ".groundwork/tmp/state.txt", ".groundwork/plan.json", ".verify/runs/old/result.json"];
   for (const path of [...tracked, ...runtime]) write(cwd, path, "original");
@@ -178,10 +179,10 @@ test("named verification enforces the project's invariant and shows searchable c
       feature: { command: "true", expect: "The feature works", covers: ["editing"] },
       guard: { command: "false", expect: "The storage boundary holds" },
     },
-    behaviours: { editing: { description: "Edit a document", entry: "/editor", paths: ["src/editor/**"], guide: ".groundwork/VERIFY.md#editing" } },
+    behaviours: { editing: { description: "Edit a document", entry: "/editor", paths: ["src/editor/**"], guide: ".groundwork/guides/editing.md#editing" } },
     invariants: { storage: { description: "Only approved modules access storage", checks: ["guard"] } },
   });
-  write(root, ".groundwork/VERIFY.md", "# Behaviour guide\n\n## Editing\nUse the editor.\n");
+  write(root, ".groundwork/guides/editing.md", "# Editing\nUse the editor.\n");
   const guide = invoke(root, "view", "guide", "editor");
   expect(guide.code).toBe(0);
   expect(guide.output).toContain("editing (behaviour)");
@@ -197,7 +198,7 @@ test("change-aware verification keeps required checks and shows areas without a 
     checks: {
       required: { command: "true", expect: "Project constraints hold", required: true },
       editor: { command: "true", expect: "The editor works", covers: ["editing"] },
-      driver: { command: "bun .groundwork/scripts/check.mjs", expect: "The verification driver works", paths: [".groundwork/scripts/**", ".groundwork/verify.json"] },
+      driver: { command: "bun .groundwork/scripts/check.mjs", expect: "The verification driver works", paths: [".groundwork/scripts/**", ".groundwork/verify.d/**"] },
       unrelated: { command: "false", expect: "Another component works", paths: ["other/**"] },
     },
     behaviours: { editing: { description: "Edit a document", paths: ["src/**"] },
@@ -207,7 +208,7 @@ test("change-aware verification keeps required checks and shows areas without a 
   commit(root);
   write(root, "src/value.txt", "after");
   write(root, ".groundwork/scripts/check.mjs", "console.log('Project-root driver');");
-  write(root, ".groundwork/verify.json", `${readFileSync(join(root, ".groundwork/verify.json"), "utf8")}\n`);
+  write(root, ".groundwork/verify.d/feature.json", `${readFileSync(join(root, ".groundwork/verify.d/feature.json"), "utf8")}\n`);
   write(root, ".groundwork/runs/other/output.log", "runtime evidence");
   write(root, "future/value.txt", "new feature");
   write(root, "notes.txt", "unmapped change");
@@ -216,7 +217,7 @@ test("change-aware verification keeps required checks and shows areas without a 
   const { report } = saved(root);
   expect(report.checks.map(check => check.name)).toEqual(["required", "editor", "driver"]);
   expect(report.selection.reasons.driver).toContain("changed path: .groundwork/scripts/check.mjs");
-  expect(report.selection.reasons.driver).toContain("changed path: .groundwork/verify.json");
+  expect(report.selection.reasons.driver).toContain("changed path: .groundwork/verify.d/feature.json");
   expect(report.selection.unmappedPaths).not.toContain(".groundwork/runs/other/output.log");
   expect(report.selection.unmappedPaths).toContain("notes.txt");
   expect(report.selection.uncoveredBehaviours).toContain("future");
@@ -289,7 +290,7 @@ function comparisonProject(mode, before, after, contextMismatch = false, prefix 
   write(root, "value.txt", before);
   const base = commit(root);
   write(root, "value.txt", after);
-  write(root, ".groundwork/verify.json", { checks: { scenario: {
+  write(root, ".groundwork/verify.d/feature.json", { checks: { scenario: {
     command: "bun .groundwork/scripts/compare.mjs", expect: mode === "regression" ? "The regression is fixed" : "Payload growth stays within budget",
     compare: mode, result: "observations.json", repeat: 2,
     ...(mode === "measurement" ? { metrics: { payload: { unit: "bytes", max: 100, maxRegressionPercent: 10 } } } : {}),
@@ -324,7 +325,7 @@ test("the candidate's new regression driver checks both source revisions and cle
 
 test("baseline comparisons resolve a nested project through a symbolic-link root", async () => {
   const { root, base } = comparisonProject("regression", "broken", "fixed", false, "packages/app");
-  const parent = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-linked-runner-"));
+  const parent = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-linked-runner-")));
   projects.push(parent);
   const linked = join(parent, "project");
   symlinkSync(root, linked, "dir");
@@ -332,7 +333,7 @@ test("baseline comparisons resolve a nested project through a symbolic-link root
   mkdirSync(directory);
   const { checks } = loadConfig(linked);
   const report = await runChecks({ root: linked, directory, checks, names: ["scenario"], base, stream: false,
-    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` } });
+    env: { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}` } });
   expect(report.problems).toEqual([]);
   expect(report.checks[0].comparison.status).toBe("passed");
   expect(report.checks[0].baseline.map(trial => trial.status)).toEqual(["failed", "failed"]);

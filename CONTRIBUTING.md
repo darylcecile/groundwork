@@ -36,7 +36,9 @@ Keep the shared code independent of any application's stack. Put application set
 - `skills/verify-work/verify.mjs`: CLI, installation, adoption, guide/map discovery, and saved reports.
 - `lib/config.mjs`: configuration validation, catalogue, and check selection.
 - `lib/map.mjs`: feature lookup and ASCII rendering of recorded direct relationships.
-- `lib/layout.mjs`: project-owned paths, runtime exclusions, and legacy-file migration.
+- `lib/layout.mjs`: project-owned paths, runtime exclusions, ignore rules and instruction updates.
+- `lib/migration.mjs`: `prepareProject`, coordinating automatic metadata conversion before command reads and source capture.
+- `lib/guide-migration.mjs`: structural guide splitting and reference relocation.
 - `lib/store.mjs`: external evidence storage, repository/workspace identity and generated-evidence migration.
 - `lib/model.mjs`: task plans, requirement coverage, observations, evidence, and measurements.
 - `lib/runner.mjs`: setup/exercise/cleanup, trials, and baseline worktrees.
@@ -47,9 +49,11 @@ Keep the shared code independent of any application's stack. Put application set
 - `portal/projects.ts`: portal-only repository registration and discovery state, stored in the user's cache.
 - `test/` and `pr-verification/test/`: project behaviour and integration checks.
 
-Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/VERIFY.md) for setup and catalogue navigation. Keep the root guide stable; put new journeys in bounded guides or subsystem maps, and their checks/catalogue entries in `.groundwork/verify.d/<feature>.json`. Fragments are auto-discovered and validated together, so no central include list is needed. Keep task, run and PR history out of durable guidance.
+Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/guides/project.md) to find project context and the catalogue. Keep that bootstrap small; put setup, constraints and journeys in guides or subsystem maps, and configuration in `.groundwork/verify.d/*.json`. Fragments are auto-discovered and validated together, so no central include list is needed. Keep task, run and PR history out of durable guidance.
 
-Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement. Reusable checks require deterministic, complete inputs and intact evidence. Keep whole-source content matching, environment-value digests and evidence validation aligned across CLI, PR and portal consumers. Migration preserves authored guides and historical reports; it must not manufacture reusable receipts from legacy results.
+Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement. Reusable checks require deterministic, complete inputs and intact evidence. Keep whole-source content matching, environment-value digests and evidence validation aligned across CLI, PR and portal consumers.
+
+`prepareProject` runs before `init`, `verify`, guide/report/map commands and PR configuration/source capture. Conversion preserves authored instructions in active guides and configuration semantics in fragments, then removes superseded metadata and ignore archives. Update only affected instruction links. Keep `loadConfig` and portal reads pure, and preparation idempotent. Historical reports retain their identity and do not become reusable receipts through migration.
 
 When changing distribution or skill paths, keep shared modules in the package and skill references inside the skill directory. The installation test exercises an extracted package through its installed skill path.
 

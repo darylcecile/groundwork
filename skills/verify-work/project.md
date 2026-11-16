@@ -1,6 +1,6 @@
-# Project verification
+# Project context
 
-Keep this root guide small and stable: setup, shared constraints and catalogue navigation. Fill it from the real project when adopting Groundwork. Root `AGENTS.md` points here; the installed `verify-work` skill provides the plan, configuration and driver reference.
+Use this shape for shared context in `.groundwork/guides/`, filling it from the real project during setup. The small `.groundwork/VERIFY.md` bootstrap links to that context and catalogue discovery. The installed `verify-work` skill provides the plan, configuration and driver reference.
 
 ## Run and control
 
@@ -12,7 +12,7 @@ Keep this root guide small and stable: setup, shared constraints and catalogue n
 
 ## Shared constraints
 
-Record enduring project-wide constraints, required environments and the checks that enforce them. Shared check definitions and context belong in `.groundwork/verify.json`. Use `required: true` for checks needed on every change; active invariant checks are always included.
+Record enduring project-wide constraints, required environments and the checks that enforce them. Shared check definitions and context belong in `.groundwork/verify.d/` fragments. Use `required: true` for checks needed on every change; active invariant checks are always included.
 
 ## Find a feature
 
@@ -31,4 +31,4 @@ Add the feature's checks and catalogue entries in `.groundwork/verify.d/<feature
 - Enable check `reuse` only for deterministic, input-complete checks; declare relevant ignored files and environment variables. Use `--fresh` when a new execution is needed.
 - Inspect the invocation's own run with `groundwork view report <id>`. A receipt or screenshot does not replace the observation needed for the claim.
 
-Keep existing authored guides intact during migration. Move or split their contents only as deliberate documentation work, preserving useful instructions and links.
+Project commands automatically convert older metadata into active guides and fragments, preserving useful instructions, links and check bindings. Handle setup and project-specific repairs as part of ordinary agent work.

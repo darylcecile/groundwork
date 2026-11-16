@@ -46,7 +46,7 @@ GitHub supports sharing this private personal repository's workflow with other p
 
 ### Inputs
 
-- **`checks`** — shell commands overriding ordinary change-based selection. Required, plan-bound and active invariant checks remain included; unrelated path matches do not add checks. A failed command stops this block and remains a failure in the final result. When omitted, the workflow selects changed areas from the merged `.groundwork/verify.json` and `.groundwork/verify.d/*.json` catalogue, with legacy root `verify.json` fallback and fragment-only projects supported.
+- **`checks`** — shell commands overriding ordinary change-based selection. Required, plan-bound and active invariant checks remain included; unrelated path matches do not add checks. A failed command stops this block and remains a failure in the final result. When omitted, the workflow selects changed areas from the merged `.groundwork/verify.d/*.json` catalogue. Older metadata is converted automatically before configuration and source capture.
 - **`plan`** — optional project-relative JSON plan. Otherwise the agent prepares a plan from the PR, project guidance and available checks. Plan bindings schedule their checks and behaviour checks. A requirement can set `review: true` to require an evidence-backed `kind: "review"` observation explicitly covering its ID; already-valid review evidence can satisfy it without another agent pass.
 - **`compare-base`** — opt into running source-aware, comparison-enabled drivers against the PR base. Defaults to `false`.
 - **`setup`** — optional commands to install dependencies and prepare the project.
@@ -60,7 +60,7 @@ For local invocation, the runner defaults to a fresh `pr-<id>` run in the extern
 
 ## What it verifies
 
-1. Check out the importing PR's proposed merge revision and capture its context.
+1. Check out the importing PR's proposed merge revision, prepare project metadata, then capture its context and source. Preparation preserves older configuration and guide content in active fragments and guides before verification begins.
 2. Load the supplied plan or have the agent identify the required outcomes. The runner freezes the plan and adds active project invariants.
 3. Run setup and selected checks/drivers, reusing eligible deterministic receipts when their inputs and evidence match. Required, plan-bound and active invariant checks remain included. Local and PR verification use the same driver and evidence contract.
 4. Assess remaining verification gaps, including unsatisfied review obligations. Skip the verification agent when all requirements already have valid evidence and the assessment passes. Otherwise have it inspect the results and exercise remaining requirements through relevant UI/API/CLI entry points. Observations name the plan requirements they establish.

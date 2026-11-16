@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { catalogue, catalogueIssues, hasConfig, loadConfig, selectChecks } from "../../lib/config.mjs";
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
-import { initializeLayout } from "../../lib/layout.mjs";
 import { renderMap } from "../../lib/map.mjs";
+import { prepareProject } from "../../lib/migration.mjs";
 import { ensurePortal } from "../../lib/portal.mjs";
 import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
   validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
@@ -20,14 +20,12 @@ import { prepareEvidenceStore } from "../../lib/store.mjs";
 const skillDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(skillDirectory, "../..");
 const oldGlobalInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `VERIFY.md` and `verify.json` when present. Set up project verification files when I ask to adopt the framework.\n";
-const oldProjectInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Read `VERIFY.md` for this project's behaviour guide and use `verify.json` for repeatable checks.\n";
-const globalInstruction = oldGlobalInstruction.replace("`VERIFY.md` and `verify.json`", "`.groundwork/VERIFY.md` and `.groundwork/verify.json`");
-const projectInstruction = oldProjectInstruction.replace("`VERIFY.md`", "`.groundwork/VERIFY.md`").replace("`verify.json`", "`.groundwork/verify.json`");
+const globalInstruction = "## Verification workflow\n\nUse the `verify-work` skill for implementation tasks. Follow its workflow in normal chat, using the project's `.groundwork/VERIFY.md` and `.groundwork/verify.d/` when present. The agent maintains project guides and checks and automatically migrates older metadata.\n";
 const help = `groundwork — checks and evidence
 
   groundwork install              Register all bundled skills and shared instructions
   groundwork update               Update the package and register its bundled skills
-  groundwork init [directory]     Set up a project without replacing existing files
+  groundwork init [directory]     Prepare project guides and checks, migrating older metadata
   groundwork verify [name ...]    Run checks and active project invariants
     --plan <file>                  Verify every requirement in a saved task plan
     --changed <ref>                Select checks for changed areas since a Git ref
@@ -40,9 +38,9 @@ const help = `groundwork — checks and evidence
 Exit codes: 0 passed, 1 failed, 2 inconclusive or invalid setup.
 `;
 
-function instructionUpdate(path, content, legacy) {
+function instructionUpdate(path, content, ...legacy) {
   const previous = existsSync(path) ? readFileSync(path, "utf8") : "";
-  let next = previous.replaceAll(legacy, content);
+  let next = legacy.reduce((value, instruction) => value.replaceAll(instruction, content), previous);
   const sections = next.split(content);
   if (sections.length > 1) next = sections[0] + content + sections.slice(1).join("");
   else if (!/^## Verification workflow\s*$/m.test(previous)) {
@@ -63,7 +61,8 @@ function install() {
     join(process.env.COPILOT_HOME || join(home, ".copilot"), "copilot-instructions.md"),
     join(process.env.XDG_CONFIG_HOME || join(home, ".config"), "opencode", "AGENTS.md"),
   ]) {
-    instructionUpdate(path, globalInstruction, oldGlobalInstruction)();
+    instructionUpdate(path, globalInstruction, oldGlobalInstruction,
+      oldGlobalInstruction.replace("`VERIFY.md` and `verify.json`", "`.groundwork/VERIFY.md` and `.groundwork/verify.json`"))();
   }
   console.log(`Groundwork skills installed: ${skills.join(", ")}. Start a new Copilot session and reload OpenCode's configuration.`);
 }
@@ -71,24 +70,22 @@ function install() {
 function init(directory) {
   const root = resolve(directory || process.cwd());
   ensure(existsSync(root) && statSync(root).isDirectory(), `Project directory does not exist: ${root}`);
-  const update = instructionUpdate(join(root, "AGENTS.md"), projectInstruction, oldProjectInstruction);
-  prepareEvidenceStore(root);
-  initializeLayout(root, readFileSync(join(skillDirectory, "project.md"), "utf8"));
-  update();
-  console.log("Fill .groundwork/VERIFY.md and .groundwork/verify.json from the project. Start with one real journey.");
+  prepareProject(root, { initialize: true });
+  return root;
 }
 
 function projectRoot() {
   const parts = process.cwd().split(sep);
-  const namespace = parts.lastIndexOf(".groundwork");
+  const namespace = Math.max(parts.lastIndexOf(".groundwork"), parts.lastIndexOf(".verify"));
   let directory = namespace < 0 ? process.cwd() : parts.slice(0, namespace).join(sep) || sep;
   while (true) {
-    if (hasConfig(directory)) return directory;
+    if (hasConfig(directory) || ["VERIFY.md", ".groundwork/VERIFY.md", ".groundwork/latest", ".verify"]
+      .some(path => existsSync(join(directory, path)))) return directory;
     const parent = dirname(directory);
     if (parent === directory || existsSync(join(directory, ".git"))) break;
     directory = parent;
   }
-  throw new Error("No .groundwork/verify.json or .groundwork/verify.d configuration found (or legacy verify.json). Adopt the project with groundwork init first.");
+  throw new Error("No Groundwork project metadata found. The agent can prepare this project with groundwork init.");
 }
 
 function validateReport(value, id) {
@@ -187,7 +184,7 @@ function guide(root, query) {
     if (item.guide) console.log(`  Guide: ${item.guide}`);
     console.log(`  Paths: ${item.paths.join(", ") || "all"}\n  Checks: ${item.checks.join(", ") || "not mapped yet"}`);
   }
-  if (!entries.length) console.log("No matching catalogue entries. Add behaviours and invariants incrementally in .groundwork/verify.json.");
+  if (!entries.length) console.log("No matching catalogue entries. The agent records behaviours and invariants in .groundwork/verify.d/<feature>.json.");
   const issues = catalogueIssues(config, root, entries.map(item => item.id));
   for (const issue of issues) console.log(`  ${issue}`);
   return issues.length ? 2 : 0;
@@ -203,13 +200,12 @@ function map(root, args) {
   return issues.length ? 2 : 0;
 }
 
-async function run(root, args) {
-  const requested = options(args);
+async function run(root, requested, planInput) {
   const config = loadConfig(root);
-  const task = requested.plan ? validatePlan(readJSON(resolve(requested.plan))) : null;
+  const task = requested.plan ? validatePlan(planInput) : null;
   const changes = requested.changed ? changedFiles(root, requested.changed) : null;
   const selection = selectChecks(config, { names: requested.names, changedPaths: changes, plan: task });
-  ensure(selection.names.length > 0, "No checks selected. Add a real check to .groundwork/verify.json or choose a mapped behaviour.");
+  ensure(selection.names.length > 0, "No checks selected. The agent must record a real check in .groundwork/verify.d/<feature>.json or choose a mapped behaviour.");
   const plan = withInvariants(task, config, selection.invariants);
   const ids = [...new Set([...selection.names.flatMap(name => config.checks[name].covers), ...selection.invariants])];
   const id = `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}`;
@@ -254,9 +250,15 @@ async function run(root, args) {
 
 try {
   const [command, ...args] = process.argv.slice(2);
+  const requested = command === "verify" ? options(args) : null;
+  const planInput = requested?.plan ? readJSON(resolve(requested.plan)) : null;
   let portalRoot = process.cwd();
-  if (command === "init") portalRoot = resolve(args[0] || portalRoot);
-  else { try { portalRoot = projectRoot(); } catch { /* An unadopted directory has an empty portal. */ } }
+  if (command === "init" && args.length <= 1) portalRoot = init(args[0]);
+  else if (command === "verify" || command === "map" ||
+    (command === "view" && (args[0] === "guide" || (args[0] === "report" && args.length <= 2)))) {
+    portalRoot = projectRoot();
+    prepareProject(portalRoot);
+  } else { try { portalRoot = projectRoot(); } catch { /* An unadopted directory has an empty portal. */ } }
   await ensurePortal(portalRoot);
   if (!command || ["help", "--help", "-h"].includes(command)) {
     console.log(help);
@@ -266,15 +268,15 @@ try {
     process.env.GROUNDWORK_PORTAL = "0"; // The nested installer runs from home; keep this invocation's project portal.
     updatePackage(packageRoot);
   } else if (command === "init" && args.length <= 1) {
-    init(args[0]);
+    console.log("Project metadata is ready. The agent maintains feature guides and checks in .groundwork/guides/ and .groundwork/verify.d/.");
   } else if (command === "verify") {
-    process.exitCode = await run(projectRoot(), args);
+    process.exitCode = await run(portalRoot, requested, planInput);
   } else if (command === "view" && args.length <= 2 && args[0] === "report") {
-    process.exitCode = report(projectRoot(), args[1]);
+    process.exitCode = report(portalRoot, args[1]);
   } else if (command === "view" && args[0] === "guide") {
-    process.exitCode = guide(projectRoot(), args.slice(1).join(" "));
+    process.exitCode = guide(portalRoot, args.slice(1).join(" "));
   } else if (command === "map") {
-    process.exitCode = map(projectRoot(), args);
+    process.exitCode = map(portalRoot, args);
   } else {
     throw new Error(`Unknown command or arguments.\n${help}`);
   }

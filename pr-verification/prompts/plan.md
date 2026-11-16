@@ -2,7 +2,7 @@
 
 Read the supplied PR context, project instructions, relevant diff, behaviour guide, catalogue, and existing checks. Produce a verification plan before the checks and behaviour-verification pass run.
 
-Groundwork's project guide and check configuration are `.groundwork/VERIFY.md` and `.groundwork/verify.json`; legacy projects may still have them at the root. Root `AGENTS.md` remains the instruction entry point.
+The runner has prepared project metadata before capturing source. Root `AGENTS.md` remains the instruction entry point; `.groundwork/VERIFY.md` is a small bootstrap to project context, with active guides under `.groundwork/guides/` and merged configuration in `.groundwork/verify.d/*.json`. Follow the converted guide links and use the supplied catalogue.
 
 Follow relevant subsystem-map links from the guide or catalogue and confirm their claims against the current source. Use them to identify entry points, affected callers, constraints, and verification gaps. A map's source findings are planning context, not runtime proof.
 
