@@ -7,7 +7,7 @@ bun install
 bun test
 ```
 
-The tests create disposable projects and exercise the real CLI, including a broken-then-fixed persistence scenario, retained evidence, source freshness, and installation that preserves existing instructions. Configuration tests cover selection, catalogue references, and invariant enforcement. Set `VERIFY_TEST_TMPDIR` to an existing directory when fixtures need a specific temporary parent.
+The tests create disposable projects and exercise the real CLI, including a broken-then-fixed persistence scenario, retained evidence, source freshness, and installation that preserves existing instructions. Configuration tests cover selection, catalogue references, and invariant enforcement. Set `VERIFY_TEST_TMPDIR` to an existing directory when fixtures need a specific temporary parent. Isolate evidence storage with `GROUNDWORK_STATE_HOME` when testing migration, worktree sharing or receipt reuse.
 
 For the recorded project check, use `bun skills/verify-work/verify.mjs verify tests`. Finish a coherent implementation batch before running checks, then inspect the resulting evidence and requirement coverage.
 
@@ -37,15 +37,19 @@ Keep the shared code independent of any application's stack. Put application set
 - `lib/config.mjs`: configuration validation, catalogue, and check selection.
 - `lib/map.mjs`: feature lookup and ASCII rendering of recorded direct relationships.
 - `lib/layout.mjs`: project-owned paths, runtime exclusions, and legacy-file migration.
+- `lib/store.mjs`: external evidence storage, repository/workspace identity and generated-evidence migration.
 - `lib/model.mjs`: task plans, requirement coverage, observations, evidence, and measurements.
 - `lib/runner.mjs`: setup/exercise/cleanup, trials, and baseline worktrees.
+- `lib/receipts.mjs`: deterministic input identities and retained check-result reuse.
 - `lib/distribution.mjs`: bundled skill discovery, registration, and package updates.
 - `lib/portal.mjs`: lightweight background portal startup and reuse.
 - `portal/`: read-only Hono API, report/catalogue adapters, file watching and React UI.
 - `portal/projects.ts`: portal-only repository registration and discovery state, stored in the user's cache.
 - `test/` and `pr-verification/test/`: project behaviour and integration checks.
 
-Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/VERIFY.md) for this repository's journeys. Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement.
+Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/VERIFY.md) for setup and catalogue navigation. Keep the root guide stable; put new journeys in bounded guides or subsystem maps, and their checks/catalogue entries in `.groundwork/verify.d/<feature>.json`. Fragments are auto-discovered and validated together, so no central include list is needed. Keep task, run and PR history out of durable guidance.
+
+Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement. Reusable checks require deterministic, complete inputs and intact evidence. Keep whole-source content matching, environment-value digests and evidence validation aligned across CLI, PR and portal consumers. Migration preserves authored guides and historical reports; it must not manufacture reusable receipts from legacy results.
 
 When changing distribution or skill paths, keep shared modules in the package and skill references inside the skill directory. The installation test exercises an extracted package through its installed skill path.
 
@@ -58,8 +62,8 @@ The tests in `pr-verification/test/` invoke the runner against disposable Git pr
 To run locally, point `GITHUB_EVENT_PATH` at a JSON file containing the target `pull_request` payload, set `GITHUB_REPOSITORY` to its `owner/repository`, and set:
 
 - `PR_VERIFY_REPOSITORY`: checkout to verify.
-- `PR_VERIFY_CHECKS`: the project's check commands.
-- Optionally, `PR_VERIFY_OUTPUT`: a fresh evidence directory. By default each run gets a new `.groundwork/runs/pr-<id>/` directory in the selected project. An explicit directory may be inside that project's `.groundwork/runs/` or outside the checkout.
+- `PR_VERIFY_CHECKS`: the project's command override. Required, plan-bound and active invariant checks remain included; unrelated path matches do not add checks.
+- Optionally, `PR_VERIFY_OUTPUT`: a fresh evidence directory. Local defaults use the external evidence store; the reusable workflow supplies runner-temporary output. Use `GROUNDWORK_STATE_HOME` to isolate local evidence storage.
 
 Then run `bun pr-verification/scripts/verify.mjs`. Local runs use the Copilot CLI's existing authentication. In GitHub Actions, the `COPILOT_TOKEN` secret supplies the credential.
 

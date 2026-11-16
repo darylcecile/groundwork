@@ -1,6 +1,6 @@
 # Codebase map reference
 
-Use this shape for a bounded area under `.groundwork/maps/<area>.md`. Adapt headings to the question; omit irrelevant sections and remove prompts/placeholders from a finished map. Prefer a small, cited explanation over a file inventory. Reuse existing journey detail instead of maintaining a second guide or database of tests.
+Use this shape for a bounded area under `.groundwork/maps/<area>.md`. Adapt headings to the question; omit irrelevant sections and remove prompts/placeholders from a finished map. Prefer a small, cited explanation over a file inventory. Reuse existing journey detail instead of maintaining a second guide or database of tests. Keep task, PR and run histories with their own records, not in the map.
 
 ## Map shape
 
@@ -60,13 +60,6 @@ conventions or unverified assumptions. Explain where a change would propagate.>
 actual assertions; do not copy commands, fixtures, or a complete test list.
 A check's presence does not say it ran or passed.>
 
-## Runtime observations
-
-<Only if observed: date, inspected source version and relevant local changes,
-entrypoint/action or command, fixture/environment, actual result, and retained
-evidence link. State exactly what was and was not exercised. Keep historical
-runs tied to their own source/context, not the map's newest inspection date.>
-
 ## Documented rationale
 
 <Only when useful: link the decision record, PR, or commit and explain what it
@@ -84,9 +77,9 @@ of source freshness.>
 
 In a map at `.groundwork/maps/catalogue.md`, label source citations with repository-relative paths and symbols; make the Markdown target relative to the map. For example, `[lib/config.mjs — catalogue](../../lib/config.mjs)` points two levels up. Add useful line/revision information in the citation text or a revision permalink.
 
-- Existing journey in `.groundwork/VERIFY.md`: target `../VERIFY.md#plan-and-select-verification`.
+- Feature journey in `.groundwork/guides/preferences.md`: target `../guides/preferences.md#save-preferences`.
 - Sibling map: target `verification.md#selection`.
-- Link **from** `.groundwork/VERIFY.md` to the map: target `maps/catalogue.md#discovery`.
+- Link **from** a feature guide to the map: target `../maps/catalogue.md#discovery`.
 - Catalogue `guide` string: `.groundwork/maps/catalogue.md#discovery`.
 - Catalogue/check `paths`: repository-root-relative files or globs, such as `lib/config.mjs`.
 
@@ -94,7 +87,7 @@ Use only paths and anchors that exist in the project. Check path patterns agains
 
 ## Connect the existing catalogue
 
-Consult the installed `verify-work` reference before modifying verification files. Use the active configuration; a legacy root `verify.json` remains active until adoption migrates it. For example, if a Groundwork map has a `## Discovery` section, its existing catalogue entry could use the following fragment. Merge it into the active configuration (normally `.groundwork/verify.json`), preserving the project's `checks` and all other entries/custom content; this is not a replacement configuration.
+Consult the installed `verify-work` reference before modifying verification files. Preserve existing entries in their active files; legacy root `verify.json` remains supported. For a new catalogue entry, save a fragment such as `.groundwork/verify.d/catalogue.json`. Fragments are discovered automatically and validated together, including cross-file references and duplicate IDs. If the entry already exists, update it in place instead of adding a second definition. For example, a map's `## Discovery` section could be linked as follows:
 
 ```json
 {
@@ -113,7 +106,7 @@ This changes navigation, not evidence. The example adds no check binding. Retain
 
 For a feature that consumes the catalogue, a source-backed relationship could be `"dependsOn": ["catalogue"]` on that feature's behaviour entry. Every target must already be a behaviour in the active configuration; self-links and references to invariants are invalid. Record direct dependencies only, explaining each connection in the map. Leave unknown relationships unrecorded. `groundwork map` displays all recorded edges; `groundwork map <feature>` displays direct dependencies, derived consumers and feature context. Relationships are navigational and do not add verification coverage or select checks automatically.
 
-Link the map from the relevant `.groundwork/VERIFY.md` section when useful. Keep detailed journeys in their existing home; if an existing catalogue `guide` still points to the best journey, retain it and link to the map there instead of replacing useful detail.
+Link the map from its catalogue entry or feature guide. A new feature needs no root-guide index or central include list update. Keep detailed journeys in their existing home; if an existing catalogue `guide` still points to the best journey, retain it and link to the map there instead of replacing useful detail.
 
 ## Refresh a map
 

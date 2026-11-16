@@ -1,14 +1,27 @@
-import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { changedFiles, source } from "../lib/runner.mjs";
+import { loadConfig } from "../lib/config.mjs";
+import { changedFiles, runChecks, source, sourceMatches } from "../lib/runner.mjs";
+import { evidenceStore } from "../lib/store.mjs";
 
 const cli = fileURLToPath(new URL("../skills/verify-work/verify.mjs", import.meta.url));
 const projects = [];
-afterEach(() => { for (const root of projects.splice(0)) rmSync(root, { recursive: true, force: true }); });
+let previousStateHome;
+beforeEach(() => {
+  previousStateHome = process.env.GROUNDWORK_STATE_HOME;
+  const state = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-runner-state-"));
+  projects.push(state);
+  process.env.GROUNDWORK_STATE_HOME = state;
+});
+afterEach(() => {
+  if (previousStateHome === undefined) delete process.env.GROUNDWORK_STATE_HOME;
+  else process.env.GROUNDWORK_STATE_HOME = previousStateHome;
+  for (const root of projects.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 function write(root, path, value) {
   mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -22,7 +35,8 @@ function git(root, ...args) {
 }
 
 function invoke(root, ...args) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: "utf8",
+    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
   return { code: result.status, output: result.stdout + result.stderr };
 }
 
@@ -37,8 +51,9 @@ function project(config) {
 }
 
 function saved(root) {
-  const id = readFileSync(join(root, ".groundwork/latest"), "utf8").trim();
-  const directory = join(root, ".groundwork/runs", id);
+  const store = evidenceStore(root);
+  const id = readFileSync(store.latest, "utf8").trim();
+  const directory = join(store.runs, id);
   return { directory, report: JSON.parse(readFileSync(join(directory, "result.json"), "utf8")) };
 }
 
@@ -73,6 +88,39 @@ test.each(["", "packages/app"])("source matching ignores only reserved runtime p
   expect(source(cwd).fingerprint).not.toBe(projectSource.fingerprint);
   expect(changedFiles(root, "HEAD").sort()).toEqual(changed.map(path => join(prefix, path)).sort());
   expect(changedFiles(cwd, "HEAD").sort()).toEqual(changed);
+});
+
+test("content identity survives commits with additions and deletions while retaining separate Git provenance", () => {
+  const root = project({ checks: {} });
+  write(root, "removed.txt", "old source");
+  commit(root);
+  rmSync(join(root, "removed.txt"));
+  write(root, "added.txt", "new source");
+  const before = source(root);
+  commit(root);
+  const after = source(root);
+  expect(after.fingerprint).toBe(before.fingerprint);
+  expect(after.revision).not.toBe(before.revision);
+  expect(sourceMatches(before, after)).toBe(true);
+});
+
+test("content identity includes executable modes and the distinction between symlinks and regular files", () => {
+  const root = project({ checks: {} });
+  write(root, "target", "contents");
+  write(root, "entry", "target");
+  const regular = source(root).fingerprint;
+  chmodSync(join(root, "entry"), 0o755);
+  const executable = source(root).fingerprint;
+  expect(executable).not.toBe(regular);
+  commit(root);
+  expect(source(root).fingerprint).toBe(executable);
+  rmSync(join(root, "entry"));
+  symlinkSync("target", join(root, "entry"));
+  const linked = source(root).fingerprint;
+  expect(linked).not.toBe(regular);
+  expect(linked).not.toBe(executable);
+  commit(root);
+  expect(source(root).fingerprint).toBe(linked);
 });
 
 test("a plan exposes an omitted requirement despite a passing named check", () => {
@@ -236,8 +284,8 @@ writeFileSync(output+"/observations.json",JSON.stringify({observations:[{id:"rou
   for (let trial = 1; trial <= 3; trial++) expect(existsSync(join(directory, `routing/trial-${trial}/artifacts/tool-trace.json`))).toBe(true);
 });
 
-function comparisonProject(mode, before, after, contextMismatch = false) {
-  const root = project({ checks: {} });
+function comparisonProject(mode, before, after, contextMismatch = false, prefix = "") {
+  const root = join(project({ checks: {} }), prefix);
   write(root, "value.txt", before);
   const base = commit(root);
   write(root, "value.txt", after);
@@ -274,13 +322,31 @@ test("the candidate's new regression driver checks both source revisions and cle
   expect(git(root, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
 });
 
-test("an unavailable or already-passing baseline cannot establish a reproduced bug", () => {
-  const unavailable = comparisonProject("regression", "broken", "fixed");
-  expect(invoke(unavailable.root, "verify", "--base", "nonexistent-ref").code).toBe(2);
-  expect(saved(unavailable.root).report.checks[0].comparison.reason).toContain("Baseline unavailable");
-  const passing = comparisonProject("regression", "fixed", "fixed");
-  expect(invoke(passing.root, "verify", "--base", passing.base).code).toBe(2);
-  expect(saved(passing.root).report.checks[0].comparison.reason).toContain("not reproduced");
+test("baseline comparisons resolve a nested project through a symbolic-link root", async () => {
+  const { root, base } = comparisonProject("regression", "broken", "fixed", false, "packages/app");
+  const parent = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-linked-runner-"));
+  projects.push(parent);
+  const linked = join(parent, "project");
+  symlinkSync(root, linked, "dir");
+  const directory = join(parent, "evidence");
+  mkdirSync(directory);
+  const { checks } = loadConfig(linked);
+  const report = await runChecks({ root: linked, directory, checks, names: ["scenario"], base, stream: false,
+    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` } });
+  expect(report.problems).toEqual([]);
+  expect(report.checks[0].comparison.status).toBe("passed");
+  expect(report.checks[0].baseline.map(trial => trial.status)).toEqual(["failed", "failed"]);
+  expect(report.checks[0].trials.map(trial => trial.status)).toEqual(["passed", "passed"]);
+  expect(readFileSync(join(directory, "scenario/baseline/trial-1/artifacts/actual.txt"), "utf8")).toBe("broken");
+  expect(readFileSync(join(directory, "scenario/trial-1/artifacts/actual.txt"), "utf8")).toBe("fixed");
+  expect(readFileSync(join(root, "value.txt"), "utf8")).toBe("fixed");
+  expect(git(root, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+});
+
+test.each(["unavailable", "already-passing"])("an %s baseline cannot establish a reproduced bug", scenario => {
+  const { root, base } = comparisonProject("regression", scenario === "unavailable" ? "broken" : "fixed", "fixed");
+  expect(invoke(root, "verify", "--base", scenario === "unavailable" ? "nonexistent-ref" : base).code).toBe(2);
+  expect(saved(root).report.checks[0].comparison.reason).toContain(scenario === "unavailable" ? "Baseline unavailable" : "not reproduced");
 });
 
 test("an unsuccessful baseline process without a failed assertion does not count as reproducing the bug", () => {

@@ -16,14 +16,14 @@ function write(path, value) {
 }
 
 function fixture() {
-  const root = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-distribution-"));
+  const root = realpathSync(mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "groundwork-distribution-")));
   directories.push(root);
   const home = join(root, "home");
   mkdirSync(home);
   const env = {
     ...process.env, GROUNDWORK_PORTAL: "0", HOME: home, XDG_CONFIG_HOME: join(home, ".config"), COPILOT_HOME: join(home, ".copilot"),
     BUN_INSTALL: join(root, "bun"), BUN_INSTALL_GLOBAL_DIR: join(root, "global"), BUN_INSTALL_BIN: join(root, "bin"),
-    PATH: `${join(root, "bin")}:${process.env.PATH}`,
+    PATH: `${join(root, "bin")}:${dirname(process.execPath)}:${process.env.PATH}`,
     GIT_CONFIG_GLOBAL: join(root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1",
   };
   write(join(home, ".bunfig.toml"), `[install]\nglobalDir = ${JSON.stringify(env.BUN_INSTALL_GLOBAL_DIR)}\nglobalBinDir = ${JSON.stringify(env.BUN_INSTALL_BIN)}\n[install.cache]\ndir = ${JSON.stringify(join(root, "cache"))}\n`);

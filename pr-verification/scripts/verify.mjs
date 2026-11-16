@@ -2,19 +2,22 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, cpSync, mkdirSync, readFileSync,
   readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { catalogue, catalogueIssues, configPath, loadConfig, parseConfig, selectChecks } from "../../lib/config.mjs";
-import { groundworkPath, pathExists } from "../../lib/layout.mjs";
+import { catalogue, catalogueIssues, hasConfig, loadConfig, parseConfig, selectChecks } from "../../lib/config.mjs";
+import { groundworkPath } from "../../lib/layout.mjs";
 import { assess, ensure, readJSON, refreshEvidence, safePath, validatePlan, withInvariants, within, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, executeCommand, git, runChecks, source } from "../../lib/runner.mjs";
-import { inspectAgent, verdict } from "./report.mjs";
+import { prepareEvidenceStore } from "../../lib/store.mjs";
+import { inspectAgent, verdict, verificationFrontier } from "./report.mjs";
 
 const repository = resolve(process.env.PR_VERIFY_REPOSITORY || process.cwd());
 const projectDirectory = resolve(repository, process.env.PR_VERIFY_DIRECTORY || ".");
-const output = resolve(process.env.PR_VERIFY_OUTPUT || groundworkPath(projectDirectory, "runs", `pr-${randomUUID()}`));
+const id = `pr-${randomUUID()}`;
+let output;
 let initialized = false;
 const pending = log => ({ status: "inconclusive", exitCode: null, durationMs: 0, log });
 const result = {
-  version: 2, repository: process.env.GITHUB_REPOSITORY || "", pullRequest: 0, headSha: "unknown", testedSha: null,
+  version: 2, id, startedAt: new Date().toISOString(), finishedAt: null,
+  repository: process.env.GITHUB_REPOSITORY || "", pullRequest: 0, headSha: "unknown", testedSha: null,
   planning: pending("planning.log"), verification: assess({ problems: ["A verification plan is not available."] }),
   status: "inconclusive", setup: pending("setup.log"), checks: pending("checks.log"),
   agent: { execution: pending("agent.log"), summary: "Behaviour verification has not completed.", checks: [], gaps: [] },
@@ -42,6 +45,8 @@ async function agent(phase, prompt, cwd) {
 
 try {
   const cwd = within(repository, projectDirectory);
+  const storage = prepareEvidenceStore(cwd);
+  output = resolve(process.env.PR_VERIFY_OUTPUT || join(storage.runs, id));
   mkdirSync(output, { recursive: true });
   const actualOutput = realpathSync(output);
   const actualRepository = realpathSync(repository);
@@ -60,11 +65,11 @@ try {
   result.headSha = pull.head.sha;
   ensure(pull.head.repo?.full_name === result.repository, "This version verifies PR branches within the importing repository.");
   const commands = { setup: process.env.PR_VERIFY_SETUP || "", checks: process.env.PR_VERIFY_CHECKS || "" };
-  const config = pathExists(configPath(cwd)) ? loadConfig(cwd) : parseConfig({ checks: {} });
+  const config = hasConfig(cwd) ? loadConfig(cwd) : parseConfig({ checks: {} });
   ensure(commands.checks.trim() || Object.keys(config.checks).length, "Provide checks or configure project checks in .groundwork/verify.json.");
   const artifacts = (process.env.PR_VERIFY_ARTIFACTS || "").split(/\r?\n/).map(path => path.trim().replace(/\/+$/, "")).filter(Boolean);
   ensure(artifacts.every(safePath), "Artifact paths must name files or directories within the project; globs and parent paths are not supported.");
-  const excluded = artifacts.map(path => relative(repository, resolve(cwd, path)));
+  const excluded = artifacts.map(path => relative(actualRepository, resolve(cwd, path)));
   result.testedSha = git(repository, ["rev-parse", "HEAD"]).toString().trim();
   const before = source(repository, excluded);
   result.source = before;
@@ -72,9 +77,13 @@ try {
   const changes = comparisonSha ? changedFiles(cwd, comparisonSha) : null;
   let configuredName = "configured-checks";
   while (Object.hasOwn(config.checks, configuredName)) configuredName += "-workflow";
-  if (commands.checks.trim()) config.checks[configuredName] = parseConfig({ checks: {
-    [configuredName]: { command: commands.checks, expect: "The configured project verification commands pass" },
-  } }).checks[configuredName];
+  if (commands.checks.trim()) {
+    const matching = Object.entries(config.checks).find(([, check]) => check.command === commands.checks);
+    if (matching) configuredName = matching[0];
+    else config.checks[configuredName] = parseConfig({ checks: {
+      [configuredName]: { command: commands.checks, expect: "The configured project verification commands pass" },
+    } }).checks[configuredName];
+  }
   const suggested = selectChecks(config, { changedPaths: changes });
   const contextPath = join(output, "context.json");
   const context = {
@@ -103,20 +112,20 @@ try {
     }
   }
   if (!taskPlan) result.problems.push("A complete verification plan is unavailable.");
-  const plannedNames = taskPlan?.requirements.flatMap(item => [
-    ...item.checks,
-    ...Object.entries(config.checks).flatMap(([name, check]) => check.covers.some(id => item.behaviours.includes(id)) ? [name] : []),
-  ]) || [];
-  const unknown = plannedNames.filter(name => !Object.hasOwn(config.checks, name));
-  if (unknown.length) result.problems.push(`Unknown planned checks: ${[...new Set(unknown)].join(", ")}`);
-  const explicit = commands.checks.trim() ? [configuredName, ...Object.entries(config.checks).flatMap(([name, check]) => check.required ? [name] : [])] : suggested.names;
-  const names = [...new Set([...explicit, ...plannedNames.filter(name => Object.hasOwn(config.checks, name)),
-    ...catalogue(config).filter(row => row.type === "invariant" && suggested.invariants.includes(row.id)).flatMap(row => row.checks)])];
-  const plan = taskPlan ? withInvariants(taskPlan, config, suggested.invariants) : null;
+  const selectionConfig = commands.checks.trim() ? { ...config,
+    invariants: Object.fromEntries(suggested.invariants.map(id => [id, config.invariants[id]])),
+  } : config;
+  const selected = selectChecks(selectionConfig, {
+    names: commands.checks.trim() ? [configuredName] : [],
+    changedPaths: commands.checks.trim() ? null : changes, plan: taskPlan,
+  });
+  const selection = { ...suggested, names: selected.names, omitted: selected.omitted, reasons: selected.reasons };
+  const { names } = selection;
+  const plan = taskPlan ? withInvariants(taskPlan, config, selection.invariants) : null;
   if (plan) writeJSON(planPath, plan);
   const originalPlan = plan ? readFileSync(planPath, "utf8") : null;
-  result.selection = { ...suggested, names, omitted: Object.keys(config.checks).filter(name => !names.includes(name)) };
-  result.problems.push(...catalogueIssues(config, cwd, [...new Set([...names.flatMap(name => config.checks[name].covers), ...suggested.invariants])]));
+  result.selection = selection;
+  result.problems.push(...catalogueIssues(config, cwd, [...new Set([...names.flatMap(name => config.checks[name].covers), ...selection.invariants])]));
   result.verification = assess({ plan, problems: result.problems, context: context.environment });
   save();
   const commandEnv = { ...process.env, PR_VERIFY_OUTPUT: output };
@@ -140,10 +149,18 @@ try {
   result.problems.push(...configured.problems);
   result.verification = assess({ plan, ...configured, problems: result.problems, context: context.environment });
   save();
-  writeJSON(contextPath, { ...context, setup: result.setup, checks: result.checks, verification: result.verification });
-  if (plan && !(process.env.GITHUB_ACTIONS === "true" && !process.env.COPILOT_GITHUB_TOKEN)) {
+  const frontier = verificationFrontier(result.verification);
+  writeJSON(contextPath, { ...context, selection, setup: result.setup, checks: result.checks, verification: result.verification, frontier });
+  if (frontier.complete) {
+    const reason = "All planned requirements are verified by completed checks and evidence; no further agent verification is required.";
+    result.agent.execution = { status: "passed", exitCode: 0, durationMs: 0, log: "agent.log", skipped: "complete", reason };
+    result.agent.summary = reason;
+    writeFileSync(join(output, "agent.log"), `${reason}\n`);
+  } else if (plan && !(process.env.GITHUB_ACTIONS === "true" && !process.env.COPILOT_GITHUB_TOKEN)) {
     const prompt = `${readFileSync(new URL("../prompts/verify.md", import.meta.url), "utf8")}\n\nPR context: ${contextPath}\nFrozen verification plan: ${planPath}\nEvidence directory: ${output}\nWrite report: ${join(output, "agent.json")}\n`;
     result.agent.execution = await agent("agent", prompt, cwd);
+  } else if (plan) {
+    result.agent.gaps.push("COPILOT_TOKEN is unavailable. Configure a Copilot credential in the importing repository.");
   }
   for (const path of artifacts) {
     try {
@@ -158,10 +175,10 @@ try {
       result.problems.push(`Could not collect ${path}: ${error.message}`);
     }
   }
-  if (result.agent.execution.status === "passed") {
+  if (result.agent.execution.status === "passed" && !result.agent.execution.skipped) {
     try { Object.assign(result.agent, inspectAgent(join(output, "agent.json"), output)); }
     catch (error) { result.agent.gaps.push(`The agent report is unavailable or invalid: ${error.message}`); }
-  } else if (!result.agent.gaps.length) {
+  } else if (result.agent.execution.status !== "passed" && !result.agent.gaps.length) {
     result.agent.gaps.push("The agent did not finish successfully; inspect agent.log.");
   }
   if (plan) {
@@ -172,11 +189,13 @@ try {
       writeJSON(planPath, plan);
     }
   }
-  if (source(repository, excluded).fingerprint !== before.fingerprint) result.problems.push("The checked-out source changed during verification. These observations do not verify the original proposed change.");
+  const after = source(repository, excluded);
+  if (after.fingerprint !== before.fingerprint || after.revision !== before.revision) result.problems.push("The checked-out source changed during verification. These observations do not verify the original proposed change.");
   const retained = refreshEvidence(output, configured.checks, [...configured.observations, ...(result.agent.observations || [])]);
   result.problems.push(...retained.problems);
   result.verification = assess({ plan, ...retained,
     problems: [...result.problems, ...result.agent.gaps], context: context.environment });
+  result.finishedAt = new Date().toISOString();
   save();
 } catch (error) {
   result.problems.push(error.message);

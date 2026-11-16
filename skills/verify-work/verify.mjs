@@ -6,14 +6,16 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { catalogue, catalogueIssues, configPath, loadConfig, selectChecks } from "../../lib/config.mjs";
+import { catalogue, catalogueIssues, hasConfig, loadConfig, selectChecks } from "../../lib/config.mjs";
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
-import { groundworkPath, initializeLayout, pathExists } from "../../lib/layout.mjs";
+import { initializeLayout } from "../../lib/layout.mjs";
 import { renderMap } from "../../lib/map.mjs";
 import { ensurePortal } from "../../lib/portal.mjs";
 import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
   validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
 import { changedFiles, pendingCheck, runChecks, source } from "../../lib/runner.mjs";
+import { receiptRecipe } from "../../lib/receipts.mjs";
+import { prepareEvidenceStore } from "../../lib/store.mjs";
 
 const skillDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(skillDirectory, "../..");
@@ -30,7 +32,8 @@ const help = `groundwork — checks and evidence
     --plan <file>                  Verify every requirement in a saved task plan
     --changed <ref>                Select checks for changed areas since a Git ref
     --base <ref>                   Compare source-aware drivers with a baseline
-  groundwork view report          Show results, coverage, measurements, and evidence
+    --fresh                        Execute checks instead of reusing saved receipts
+  groundwork view report [id]     Show results, coverage, measurements, and evidence
   groundwork view guide [query]   Find behaviours, invariants, and their checks
   groundwork map [feature]        Show recorded feature dependencies and pointers
 
@@ -69,6 +72,7 @@ function init(directory) {
   const root = resolve(directory || process.cwd());
   ensure(existsSync(root) && statSync(root).isDirectory(), `Project directory does not exist: ${root}`);
   const update = instructionUpdate(join(root, "AGENTS.md"), projectInstruction, oldProjectInstruction);
+  prepareEvidenceStore(root);
   initializeLayout(root, readFileSync(join(skillDirectory, "project.md"), "utf8"));
   update();
   console.log("Fill .groundwork/VERIFY.md and .groundwork/verify.json from the project. Start with one real journey.");
@@ -79,12 +83,12 @@ function projectRoot() {
   const namespace = parts.lastIndexOf(".groundwork");
   let directory = namespace < 0 ? process.cwd() : parts.slice(0, namespace).join(sep) || sep;
   while (true) {
-    if (pathExists(configPath(directory))) return directory;
+    if (hasConfig(directory)) return directory;
     const parent = dirname(directory);
     if (parent === directory || existsSync(join(directory, ".git"))) break;
     directory = parent;
   }
-  throw new Error("No .groundwork/verify.json found (or legacy verify.json). Adopt the project with groundwork init first.");
+  throw new Error("No .groundwork/verify.json or .groundwork/verify.d configuration found (or legacy verify.json). Adopt the project with groundwork init first.");
 }
 
 function validateReport(value, id) {
@@ -99,23 +103,41 @@ function validateReport(value, id) {
   return value;
 }
 
-function report(root) {
-  const storage = pathExists(groundworkPath(root, "latest")) ? groundworkPath(root) : join(root, ".verify");
-  const id = readFileSync(join(storage, "latest"), "utf8").trim();
-  ensure(/^[a-zA-Z0-9_-]+$/.test(id), "Invalid latest run identifier.");
-  const directory = join(storage, "runs", id);
+function report(root, requestedId) {
+  const storage = prepareEvidenceStore(root);
+  const id = requestedId || readFileSync(storage.latest, "utf8").trim();
+  ensure(/^[a-zA-Z0-9_-]+$/.test(id), "Invalid run identifier.");
+  const directory = join(storage.runs, id);
   const result = validateReport(readJSON(join(directory, "result.json")), id);
   const issues = [...(result.problems || [])];
-  if (!result.finishedAt) issues.push("The latest run did not finish.");
-  if (source(root).fingerprint !== result.source.fingerprint) issues.push("Source changed since this run; verify the affected behaviour again.");
+  if (!result.finishedAt) issues.push("The selected run did not finish.");
+  const current = source(root);
+  if (!result.source.identityVersion || result.source.identityVersion !== current.identityVersion) {
+    issues.push("Historical source identity; this run is inapplicable to current content matching. Verify the affected behaviour again.");
+  } else if (current.fingerprint !== result.source.fingerprint) issues.push("Source changed since this run; verify the affected behaviour again.");
+  const receipts = result.checks.filter(check => text(check.receipt?.key));
+  if (receipts.length) {
+    try {
+      const config = loadConfig(root);
+      const context = { ...config.context, runnerPlatform: process.platform, runnerArchitecture: process.arch };
+      for (const check of receipts) {
+        ensure(Object.hasOwn(config.checks, check.name), `The current recipe for ${check.name} is unavailable.`);
+        const recipe = receiptRecipe({ root, name: check.name, check: config.checks[check.name], source: current,
+          context, plan: result.plan || null, env: process.env });
+        ensure(recipe.key === check.receipt.key, `Receipt inputs changed for ${check.name}; verify the affected behaviour again.`);
+      }
+    } catch (error) { issues.push(`Saved receipt is inapplicable: ${error.message}`); }
+  }
   const retained = refreshEvidence(directory, result.checks, result.observations || []);
   issues.push(...retained.problems);
   const evaluated = assess({ plan: result.plan || null, ...retained, problems: issues, context: result.context || {} });
   const { status } = evaluated;
   console.log(`\n${status.toUpperCase()} — checks from ${result.startedAt}`);
+  console.log(`Run: ${id}`);
   console.log(`Source: ${result.source.revision?.slice(0, 12) || "no commit yet"}${result.source.dirty ? " + local changes" : ""} · ${result.source.fingerprint.slice(0, 12)}`);
   for (const check of evaluated.checks) {
     console.log(`  ${check.status.toUpperCase()} ${check.name}: ${check.expect}`);
+    if (check.receipt) console.log(`    ${check.receipt.disposition.toUpperCase()}: ${check.receipt.reason}${check.receipt.id ? ` (receipt ${check.receipt.id})` : ""}`);
     if (check.reason) console.log(`    ${check.reason}`);
     console.log(`    Log: ${relative(root, join(directory, check.log))}`);
     for (const artifact of check.artifacts) console.log(`    Evidence: ${relative(root, join(directory, artifact.path))}`);
@@ -139,13 +161,15 @@ function report(root) {
 }
 
 function options(args) {
-  const value = { names: [], plan: null, changed: null, base: null };
+  const value = { names: [], plan: null, changed: null, base: null, fresh: false };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (["--plan", "--changed", "--base"].includes(arg)) {
       const key = arg.slice(2);
       ensure(!value[key] && text(args[index + 1]) && !args[index + 1].startsWith("--"), `${arg} needs one value.`);
       value[key] = args[++index];
+    } else if (arg === "--fresh") {
+      value.fresh = true;
     } else {
       ensure(!arg.startsWith("--"), `Unknown option: ${arg}`);
       value.names.push(arg);
@@ -182,20 +206,21 @@ function map(root, args) {
 async function run(root, args) {
   const requested = options(args);
   const config = loadConfig(root);
-  const changes = requested.changed ? changedFiles(root, requested.changed) : null;
-  const selection = selectChecks(config, { names: requested.names, changedPaths: changes });
-  ensure(selection.names.length > 0, "No checks selected. Add a real check to .groundwork/verify.json or choose a mapped behaviour.");
   const task = requested.plan ? validatePlan(readJSON(resolve(requested.plan))) : null;
+  const changes = requested.changed ? changedFiles(root, requested.changed) : null;
+  const selection = selectChecks(config, { names: requested.names, changedPaths: changes, plan: task });
+  ensure(selection.names.length > 0, "No checks selected. Add a real check to .groundwork/verify.json or choose a mapped behaviour.");
   const plan = withInvariants(task, config, selection.invariants);
   const ids = [...new Set([...selection.names.flatMap(name => config.checks[name].covers), ...selection.invariants])];
   const id = `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}`;
+  const storage = prepareEvidenceStore(root);
   const result = {
     version: 2, id, startedAt: new Date().toISOString(), finishedAt: null, source: source(root),
     selection, omitted: selection.omitted,
     ...assess({ plan, checks: selection.names.map(name => pendingCheck(name, config.checks[name])), problems: catalogueIssues(config, root, ids),
       context: { ...config.context, runnerPlatform: process.platform, runnerArchitecture: process.arch } }),
   };
-  const directory = groundworkPath(root, "runs", id);
+  const directory = join(storage.runs, id);
   mkdirSync(directory, { recursive: true });
   const path = join(directory, "result.json");
   const save = () => {
@@ -204,14 +229,14 @@ async function run(root, args) {
     writeJSON(path, result);
   };
   save();
-  writeFileSync(groundworkPath(root, "latest"), `${id}\n`);
+  writeFileSync(storage.latest, `${id}\n`);
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
   try {
     const execution = await runChecks({ root, directory, checks: config.checks, names: selection.names, plan,
-      base: requested.base, context: result.context, signal: controller.signal,
+      base: requested.base, fresh: requested.fresh, context: result.context, signal: controller.signal,
       onUpdate(checks, observations) { result.checks = checks; result.observations = observations; save(); } });
     result.checks = execution.checks;
     result.observations = execution.observations;
@@ -224,7 +249,7 @@ async function run(root, args) {
     process.removeListener("SIGTERM", interrupt);
     save();
   }
-  return report(root);
+  return report(root, id);
 }
 
 try {
@@ -244,8 +269,8 @@ try {
     init(args[0]);
   } else if (command === "verify") {
     process.exitCode = await run(projectRoot(), args);
-  } else if (command === "view" && args.length === 1 && args[0] === "report") {
-    process.exitCode = report(projectRoot());
+  } else if (command === "view" && args.length <= 2 && args[0] === "report") {
+    process.exitCode = report(projectRoot(), args[1]);
   } else if (command === "view" && args[0] === "guide") {
     process.exitCode = guide(projectRoot(), args.slice(1).join(" "));
   } else if (command === "map") {

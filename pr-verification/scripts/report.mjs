@@ -12,10 +12,11 @@ export function validateAgent(value) {
     text(value.summary) && value.summary.length <= 2000 && strings(value.gaps) &&
     Array.isArray(value.checks) && value.checks.length > 0 && value.checks.length <= 20, "The agent report must contain a summary, checks, and gaps.");
   for (const check of value.checks) {
-    ensure(object(check) && Object.keys(check).every(key => ["claim", "status", "observed", "evidence", "covers"].includes(key)) &&
+    ensure(object(check) && Object.keys(check).every(key => ["claim", "status", "observed", "evidence", "covers", "kind"].includes(key)) &&
       text(check.claim) && check.claim.length <= 2000 && text(check.observed) && check.observed.length <= 2000 &&
       statuses.includes(check.status) && strings(check.evidence) && check.evidence.every(relativePath) &&
-      (check.covers === undefined || strings(check.covers)), "Invalid claim, observation, status, or evidence in the agent report.");
+      (check.covers === undefined || strings(check.covers)) &&
+      (check.kind === undefined || ["assertion", "review", "measurement"].includes(check.kind)), "Invalid claim, observation, status, or evidence in the agent report.");
   }
   return value;
 }
@@ -24,12 +25,23 @@ export function inspectAgent(path, directory) {
   const value = validateAgent(JSON.parse(readFileSync(path, "utf8")));
   const inspected = inspectObservations(value.checks.map((check, index) => ({
     id: `agent.${index + 1}`, covers: check.covers || [], status: check.status,
-    observed: check.observed, evidence: check.evidence,
+    observed: check.observed, evidence: check.evidence, kind: check.kind ?? "assertion",
   })), directory, { producer: "agent", forbidden: ["agent.json", "result.json", "context.json", "plan.json",
     "agent.log", "agent-session.md", "planning.log", "planning-session.md"] });
   return { summary: value.summary,
     checks: value.checks.map((check, index) => ({ ...check, status: inspected.observations[index].status })),
     gaps: [...value.gaps, ...inspected.problems], observations: inspected.observations };
+}
+
+export function verificationFrontier(verification) {
+  const evaluated = assess(verification);
+  const requirements = evaluated.plan?.requirements || [];
+  const missing = requirements.flatMap((requirement, index) => {
+    const coverage = evaluated.coverage[index];
+    return coverage.status !== "verified" ? [{ ...requirement, status: coverage.status, reason: coverage.reason }] : [];
+  });
+  return { missing, completed: evaluated.coverage.filter(item => item.status === "verified"),
+    complete: requirements.length > 0 && missing.length === 0 && evaluated.status === "passed" };
 }
 
 export function verdict(result) {
@@ -38,7 +50,8 @@ export function verdict(result) {
     if (!result.verification.plan) problems.push("A verification plan is unavailable.");
     if (result.planning?.status !== "passed") problems.push("Planning did not complete.");
     if (result.setup.status !== "passed" || result.checks.status !== "passed") problems.push("Project verification did not complete successfully.");
-    if (result.agent.execution.status !== "passed" || !result.agent.checks.length) problems.push("Behaviour verification did not complete.");
+    const complete = result.agent.execution.skipped === "complete" && verificationFrontier(result.verification).complete;
+    if (result.agent.execution.status !== "passed" || (!complete && !result.agent.checks.length)) problems.push("Behaviour verification did not complete.");
     return assess({ ...result.verification, problems }).status;
   }
   if (result.checks.status === "failed" || result.agent.checks.some(check => check.status === "failed")) return "failed";
@@ -56,6 +69,7 @@ export function validateResult(value) {
   for (const stage of [value.setup, value.checks, value.agent.execution]) {
     ensure(object(stage) && statuses.includes(stage.status) && text(stage.log), "Invalid verification stage.");
   }
+  ensure(value.agent.execution.skipped === undefined || value.agent.execution.skipped === "complete", "Invalid agent skip reason.");
   if (value.agent.checks.length) validateAgent({ summary: value.agent.summary, checks: value.agent.checks, gaps: [] });
   if (value.version === 2) {
     validateAssessment(value.verification);
@@ -87,6 +101,7 @@ export function formatComment(result, { artifactUrl, runUrl, conclusion }) {
     lines.push("", "### Requirement coverage", markdownText(evaluated.plan.goal));
     for (const requirement of evaluated.coverage) lines.push(`- **${requirement.status}: ${markdownText(requirement.id, 100)}** — ${markdownText(requirement.expect, 700)}${requirement.reason ? ` (${markdownText(requirement.reason, 500)})` : ""}`);
     for (const check of evaluated.checks) {
+      if (check.receipt) lines.push(`- **${markdownText(check.name, 100)}:** ${markdownText(check.receipt.disposition, 30)} — ${markdownText(check.receipt.reason, 500)}`);
       if (check.comparison) lines.push(`- **Comparison — ${markdownText(check.name, 100)}:** ${check.comparison.status}. ${markdownText(check.comparison.reason, 500)}`);
       if (check.trialSummary?.total > 1) lines.push(`- **Trials — ${markdownText(check.name, 100)}:** ${check.trialSummary.passed}/${check.trialSummary.total} passed.`);
     }

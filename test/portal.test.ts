@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ciVariables, portalBuild, portalHealth, portalPorts, portalStateDirectory, portalURL, probePortal } from "../lib/portal.mjs";
+import { evidenceStore } from "../lib/store.mjs";
 import { createPortal } from "../portal/server";
 import type { CatalogueResponse, Project, ProjectsResponse, RunResponse, RunsResponse } from "../portal/types";
 
@@ -11,14 +12,19 @@ const cli = fileURLToPath(new URL("../skills/verify-work/verify.mjs", import.met
 const projects: string[] = [];
 const cleanup: (() => void | Promise<void>)[] = [];
 const previousCache = process.env.XDG_CACHE_HOME;
+const previousState = process.env.XDG_STATE_HOME;
+const previousGroundworkState = process.env.GROUNDWORK_STATE_HOME;
 
-beforeEach(() => { process.env.XDG_CACHE_HOME = temporaryProject(); });
+beforeEach(() => { process.env.XDG_CACHE_HOME = temporaryProject(); process.env.XDG_STATE_HOME = temporaryProject(); delete process.env.GROUNDWORK_STATE_HOME; });
 
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
   for (const root of projects.splice(0)) rmSync(root, { recursive: true, force: true });
   if (previousCache === undefined) delete process.env.XDG_CACHE_HOME;
   else process.env.XDG_CACHE_HOME = previousCache;
+  if (previousState === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = previousState;
+  if (previousGroundworkState !== undefined) process.env.GROUNDWORK_STATE_HOME = previousGroundworkState;
 });
 
 function temporaryProject() {
@@ -344,6 +350,95 @@ function events(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
+function gitProject() {
+  const root = temporaryProject();
+  Bun.spawnSync(["git", "init", "-q", root]);
+  return root;
+}
+
+function storeWrite(root: string, path: string, value: unknown) {
+  write(evidenceStore(root).runs, path, value);
+}
+
+test("the external evidence store is read alongside legacy runs, shows receipts and stays per repository", async () => {
+  const root = gitProject();
+  const other = gitProject();
+  const store = evidenceStore(root);
+  const report = saved("stored");
+  report.checks.push({ ...report.checks[0]!, name: "reused", log: "reused/output.log", artifacts: [],
+    receipt: { id: "r1", key: "k".repeat(64), disposition: "reused", reason: "Inputs unchanged since run earlier.", run: "earlier" } } as never);
+  (report.checks[0] as Record<string, unknown>).receipt = { id: null, key: null, disposition: "executed", reason: "No reusable result was available." };
+  report.checks.push({ ...report.checks[0]!, name: "cached", log: "check/output.log", artifacts: [],
+    receipt: { id: "r0", key: "j".repeat(64), disposition: "executed", reason: "Recorded for later reuse." } } as never);
+  storeWrite(root, "stored/result.json", report);
+  storeWrite(root, "stored/reused/output.log", "materialized\n");
+  mkdirSync(dirname(store.latest), { recursive: true });
+  writeFileSync(store.latest, "stored\n");
+  write(root, ".groundwork/runs/stored/result.json", saved("stored"));
+  const unidentified = saved("unidentified");
+  (unidentified.checks[0] as Record<string, unknown>).receipt = { id: null, key: null, disposition: "reused" };
+  storeWrite(root, "unidentified/result.json", unidentified);
+  storeWrite(root, "copied/result.json", saved("copied"));
+  write(root, ".groundwork/runs/copied/result.json", saved("copied"));
+  write(root, ".groundwork/runs/legacy/result.json", saved("legacy"));
+  write(root, ".groundwork/latest", "legacy\n");
+  const storeBefore = snapshot(store.directory);
+  const before = snapshot(root);
+  const request = await portal(root);
+  const history: RunsResponse = await (await request("/runs")).json();
+  expect(history.latest).toBe("store:stored");
+  expect(history.runs.map(run => `${run.storage}:${run.id}`).sort()).toEqual(["groundwork:legacy", "groundwork:stored", "store:copied", "store:stored", "store:unidentified"]);
+  expect(history.runs.find(run => run.id === "unidentified")?.error).toBe("Invalid saved check receipt.");
+  const detail: RunResponse = await (await request("/runs/store/stored")).json();
+  expect(detail.report?.checks.map(check => check.receipt?.disposition)).toEqual(["executed", "reused", "executed"]);
+  expect(detail.report?.checks[1]?.receipt?.reason).toBe("Inputs unchanged since run earlier.");
+  expect(detail.files.map(file => file.path)).toContain("reused/output.log");
+  expect(await (await request("/files/store/stored?path=reused%2Foutput.log")).text()).toBe("materialized\n");
+  expect((await request("/runs/store/..%2F..")).status).toBe(400);
+  const elsewhere = await portal(other);
+  const otherHistory: RunsResponse = await (await elsewhere("/runs")).json();
+  expect(otherHistory.runs).toEqual([]);
+  expect(otherHistory.latest).toBeNull();
+  expect(snapshot(root)).toEqual(before);
+  expect(snapshot(store.directory)).toEqual(storeBefore);
+});
+
+test("a symbolic link inside the evidence store cannot redirect run reads", async () => {
+  const root = gitProject();
+  const outside = temporaryProject();
+  write(outside, "escaped/result.json", saved("escaped"));
+  mkdirSync(evidenceStore(root).runs, { recursive: true });
+  symlinkSync(join(outside, "escaped"), join(evidenceStore(root).runs, "escaped"));
+  const request = await portal(root);
+  const history: RunsResponse = await (await request("/runs")).json();
+  expect(history.runs.find(run => run.id === "escaped")?.error).toBeTruthy();
+  expect((await request("/files/store/escaped?path=result.json")).status).toBe(400);
+});
+
+test("fragment-only configuration is catalogued", async () => {
+  const root = temporaryProject();
+  write(root, ".groundwork/verify.d/checks.json", { checks: { unit: { command: "true", expect: "Units pass" } } });
+  const request = await portal(root);
+  const catalogue: CatalogueResponse = await (await request("/catalogue")).json();
+  expect(catalogue.checks.map(check => check.id)).toEqual(["unit"]);
+});
+
+test("SSE reports runs arriving in the external store", async () => {
+  const root = gitProject();
+  const instance = portalInstance();
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: instance.app.fetch, idleTimeout: 0 });
+  const controller = new AbortController();
+  cleanup.push(() => { controller.abort(); server.stop(true); instance.close(); });
+  const response = await fetch(`${server.url}api/events`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
+  const event = events(response.body!.getReader());
+  await event("ready");
+  const project = await register(instance.request, root);
+  await event("projects");
+  await fetch(`${server.url}api/projects/${project.id}/runs`);
+  storeWrite(root, "arrived/result.json", saved("arrived"));
+  expect(await event("change", project.id)).toEqual({ projectId: project.id });
+});
+
 test("global SSE scopes evidence, configuration and opened-guide changes and announces registrations", async () => {
   const root = temporaryProject();
   const other = temporaryProject();
@@ -389,7 +484,7 @@ test("global SSE scopes evidence, configuration and opened-guide changes and ann
 
 function localEnvironment(extra: Record<string, string> = {}) {
   const env = { ...process.env };
-  for (const key of [...ciVariables, "GROUNDWORK_EVIDENCE_DIR", "GROUNDWORK_PORTAL"]) delete env[key];
+  for (const key of [...ciVariables, "GROUNDWORK_EVIDENCE_DIR", "GROUNDWORK_PORTAL", "GROUNDWORK_STATE_HOME"]) delete env[key];
   return { ...env, ...extra };
 }
 

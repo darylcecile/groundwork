@@ -1,14 +1,27 @@
-import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatComment, marker, publishComment } from "../scripts/report.mjs";
+import { formatComment, marker, publishComment, validateResult, verdict } from "../scripts/report.mjs";
+import { evidenceStore } from "../../lib/store.mjs";
+import { refreshEvidence } from "../../lib/model.mjs";
 
 const runner = fileURLToPath(new URL("../scripts/verify.mjs", import.meta.url));
 const temporary = [];
-afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }); });
+let previousStateHome;
+beforeEach(() => {
+  previousStateHome = process.env.GROUNDWORK_STATE_HOME;
+  const state = mkdtempSync(join(process.env.VERIFY_TEST_TMPDIR || tmpdir(), "pr-verification-state-"));
+  temporary.push(state);
+  process.env.GROUNDWORK_STATE_HOME = state;
+});
+afterEach(() => {
+  if (previousStateHome === undefined) delete process.env.GROUNDWORK_STATE_HOME;
+  else process.env.GROUNDWORK_STATE_HOME = previousStateHome;
+  for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true });
+});
 
 function write(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -38,6 +51,7 @@ function fixture(agent = "valid") {
   write(fake, `#!${process.execPath}
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 const output = process.env.PR_VERIFY_OUTPUT;
 const mode = process.env.TEST_AGENT;
 if (process.env.GROUNDWORK_AGENT_PHASE === "planning") {
@@ -52,19 +66,20 @@ if (mode === "exit") process.exit(1);
 if (mode === "missing-report") process.exit(0);
 if (mode === "invalid") { writeFileSync(join(output, "agent.json"), "{}"); process.exit(0); }
 if (mode === "mutate") writeFileSync("app.txt", "changed by verifier");
+if (mode === "commit") spawnSync("git", ["-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "--allow-empty", "-qm", "Changed tested revision"]);
 if (mode === "mutate-plan") writeFileSync(join(output, "plan.json"), JSON.stringify({goal: "Verify only one item", requirements: [{id: "behaviour", expect: "The requested behaviour works"}]}));
 mkdirSync(join(output, "agent"), { recursive: true });
 if (mode !== "missing-evidence") writeFileSync(join(output, "agent", "observation.txt"), "Observed the configured behaviour");
 const evidence = mode === "self-report" ? ["agent.json"] : ["agent/observation.txt"];
 writeFileSync(join(output, "agent.json"), JSON.stringify({
   summary: "Observed the requested behaviour.",
-  checks: [{ claim: "The requested behaviour works", covers: ["behaviour"], status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
+  checks: [{ claim: "The requested behaviour works", covers: ["behaviour"], kind: mode === "unspecified-kind" ? undefined : mode === "review" ? "review" : "assertion", status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
   gaps: mode === "gap" ? ["The required browser is unavailable"] : []
 }));
 `);
   chmodSync(fake, 0o755);
   return { root, project, output, event, env: {
-    ...process.env, PATH: `${dirname(fake)}:${process.env.PATH}`, TEST_AGENT: agent,
+    ...process.env, PATH: `${dirname(fake)}:${dirname(process.execPath)}:${process.env.PATH}`, TEST_AGENT: agent,
     GITHUB_EVENT_PATH: eventPath, GITHUB_REPOSITORY: "consumer/project", GITHUB_ACTIONS: "true",
     GITHUB_OUTPUT: join(root, "github-output"), COPILOT_GITHUB_TOKEN: "test-copilot-credential",
     PR_VERIFY_REPOSITORY: project, PR_VERIFY_OUTPUT: output, PR_VERIFY_CHECKS: "true",
@@ -79,16 +94,24 @@ function run(value, overrides = {}) {
     report: JSON.parse(readFileSync(join(value.output, "result.json"), "utf8")) };
 }
 
-test("runs checks and the agent, captures configured assets, and keeps the Copilot credential out of project commands", () => {
+test.each(["direct", "symlink"])("runs checks and the agent from a %s repository, captures configured assets, and keeps the Copilot credential out of project commands", location => {
   const value = fixture();
+  if (location === "symlink") {
+    const linked = join(value.root, "linked-project");
+    symlinkSync(value.project, linked, "dir");
+    value.env.PR_VERIFY_REPOSITORY = linked;
+  }
   const result = run(value, {
     PR_VERIFY_CHECKS: `bun -e 'if (process.env.COPILOT_GITHUB_TOKEN) process.exit(1); require("node:fs").mkdirSync("test-results"); require("node:fs").writeFileSync("test-results/response.json", JSON.stringify({ok:true})); console.log("Checks observed success")'`,
     PR_VERIFY_ARTIFACTS: "test-results",
   });
+  expect(result.report.problems).toEqual([]);
+  expect(result.report.agent.gaps).toEqual([]);
   expect(result.code).toBe(0);
   expect(result.report.status).toBe("passed");
   expect(result.report.repository).toBe("consumer/project");
   expect(existsSync(join(value.output, "project/test-results/response.json"))).toBe(true);
+  expect(JSON.parse(readFileSync(join(value.output, "project/test-results/response.json"), "utf8"))).toEqual({ ok: true });
   expect(readFileSync(join(value.output, "checks.log"), "utf8")).toContain("Checks observed success");
   expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(true);
 });
@@ -152,7 +175,7 @@ test.each([".groundwork/verify.json", "verify.json"])("project catalogue at %s u
   expect(result.report.verification.coverage.find(item => item.id === "invariant:boundary").status).toBe("failed");
 });
 
-test("default PR evidence stays inside a nested project's .groundwork and uses its root-relative driver", () => {
+test("default PR evidence uses external project storage and its nested root-relative driver", () => {
   const value = fixture();
   const project = join(value.project, "packages/app");
   write(join(project, "app.txt"), "nested project\n");
@@ -167,14 +190,14 @@ console.log("Nested project driver passed");\n`);
   const execute = () => spawnSync(process.execPath, [runner], { env, encoding: "utf8" });
   const first = execute();
   expect(first.status).toBe(0);
-  const runs = join(project, ".groundwork/runs");
+  const runs = evidenceStore(project).runs;
   const [id] = readdirSync(runs);
   const report = JSON.parse(readFileSync(join(runs, id, "result.json"), "utf8"));
   expect(report.status).toBe("passed");
   expect(report.problems).toEqual([]);
   expect(readFileSync(join(runs, id, "feature/output.log"), "utf8")).toContain("Nested project driver passed");
   expect(existsSync(value.output)).toBe(false);
-  expect(existsSync(join(value.project, ".groundwork"))).toBe(false);
+  expect(existsSync(join(project, ".groundwork/runs"))).toBe(false);
   expect(existsSync(join(project, ".verify"))).toBe(false);
   expect(execute().status).toBe(0);
   const previousRuns = readdirSync(runs);
@@ -184,6 +207,156 @@ console.log("Nested project driver passed");\n`);
   const changedRun = readdirSync(runs).find(id => !previousRuns.includes(id));
   const changedReport = JSON.parse(readFileSync(join(runs, changedRun, "result.json"), "utf8"));
   expect(changedReport.problems.join(" ")).toContain("source changed during verification");
+});
+
+test("completed automated requirements skip the verification agent without requiring its credential", () => {
+  const value = fixture("exit");
+  const command = 'printf "Automated proof\\n"';
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command, expect: "The requested behaviour works" },
+  } }));
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify the requested behaviour", requirements: [
+    { id: "behaviour", expect: "The requested behaviour works", checks: ["feature"] },
+  ] }));
+  const result = run(value, { PR_VERIFY_CHECKS: command, PR_VERIFY_PLAN: ".groundwork/plans/pr.json", COPILOT_GITHUB_TOKEN: "" });
+  expect(result.code).toBe(0);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature"]);
+  expect(result.report.agent.execution.skipped).toBe("complete");
+  expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
+  expect(result.report.agent.gaps).toEqual([]);
+  expect(verdict(validateResult(result.report))).toBe("passed");
+  const comment = formatComment(result.report, { artifactUrl: "https://example.test/evidence", runUrl: "https://example.test/run", conclusion: "success" });
+  expect(comment).toContain("Final verification — Passed");
+  expect(comment).toContain("no further agent verification is required");
+  const unavailable = structuredClone(result.report);
+  delete unavailable.agent.execution.skipped;
+  expect(verdict(unavailable)).toBe("inconclusive");
+});
+
+test.each(["assertion", "review", "unspecified-kind"])("required review invokes the agent and distinguishes %s observations", kind => {
+  const value = fixture(kind);
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "true", expect: "The automated behaviour works", covers: ["feature"] },
+  }, behaviours: { feature: { description: "The feature works" } } }));
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify and review the behaviour", requirements: [
+    { id: "behaviour", expect: "The requested behaviour fits the design", behaviours: ["feature"], review: true },
+  ] }));
+  const result = run(value, { PR_VERIFY_CHECKS: "", PR_VERIFY_PLAN: ".groundwork/plans/pr.json" });
+  expect(result.code).toBe(kind === "review" ? 0 : 2);
+  expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(true);
+  expect(result.report.verification.observations[0].kind).toBe(kind === "unspecified-kind" ? "assertion" : kind);
+  expect(result.report.verification.coverage[0].status).toBe(kind === "review" ? "verified" : "unverified");
+  const context = JSON.parse(readFileSync(join(value.output, "context.json"), "utf8"));
+  expect(context.frontier.missing.map(item => item.id)).toEqual(["behaviour"]);
+  expect(context.verification.checks[0].status).toBe("passed");
+});
+
+test("the verification frontier supplies only missing requirements alongside completed evidence", () => {
+  const value = fixture();
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "true", expect: "The automated outcome holds" },
+  } }));
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify both outcomes", requirements: [
+    { id: "automated", expect: "The automated outcome holds", checks: ["feature"] },
+    { id: "behaviour", expect: "The unbound outcome needs an observation" },
+  ] }));
+  const result = run(value, { PR_VERIFY_CHECKS: "", PR_VERIFY_PLAN: ".groundwork/plans/pr.json" });
+  expect(result.code).toBe(0);
+  const context = JSON.parse(readFileSync(join(value.output, "context.json"), "utf8"));
+  expect(context.frontier.missing.map(item => item.id)).toEqual(["behaviour"]);
+  expect(context.frontier.completed.map(item => item.id)).toEqual(["automated"]);
+  expect(context.frontier.completed[0].evidence).toContain("feature/output.log");
+  expect(context.selection.reasons.feature.join(" ")).toContain("automated");
+});
+
+test("an evidence-backed review from a completed check closes the frontier without another agent pass", () => {
+  const value = fixture("exit");
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    review: { command: "bun .groundwork/scripts/review.mjs", expect: "The requested contract has been reviewed", result: "result.json" },
+  } }));
+  write(join(value.project, ".groundwork/scripts/review.mjs"), `import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const directory = process.env.GROUNDWORK_EVIDENCE_DIR;
+writeFileSync(join(directory, "review.txt"), "Reviewed the public contract and confirmed its documented inputs and return value are preserved.");
+writeFileSync(join(directory, "result.json"), JSON.stringify({ observations: [{
+  kind: "review", status: "passed", covers: ["behaviour"], observed: "Reviewed the public contract against the requested change.", evidence: ["review.txt"]
+}] }));\n`);
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify the reviewed contract", requirements: [
+    { id: "behaviour", expect: "The public contract is preserved", checks: ["review"], review: true },
+  ] }));
+  const result = run(value, { PR_VERIFY_CHECKS: "", PR_VERIFY_PLAN: ".groundwork/plans/pr.json", COPILOT_GITHUB_TOKEN: "" });
+  expect(result.code).toBe(0);
+  expect(result.report.verification.coverage[0].status).toBe("verified");
+  expect(result.report.agent.execution.skipped).toBe("complete");
+  expect(existsSync(join(value.output, "agent-was-run.txt"))).toBe(false);
+  const context = JSON.parse(readFileSync(join(value.output, "context.json"), "utf8"));
+  expect(context.frontier.missing).toEqual([]);
+  expect(context.frontier.completed[0].evidence).toContain("review/artifacts/review.txt");
+  expect(verdict(validateResult(result.report))).toBe("passed");
+});
+
+test("a workflow override includes required, planned, and active invariant checks without unrelated changed-path checks", () => {
+  const value = fixture("exit");
+  git(value.project, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "--allow-empty", "-qm", "Candidate revision");
+  write(join(value.project, "app.txt"), "changed candidate implementation\n");
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    required: { command: "true", expect: "The required check passes", required: true },
+    planned: { command: "true", expect: "The planned check passes" },
+    journey: { command: "true", expect: "The planned behaviour works", covers: ["feature"] },
+    active: { command: "true", expect: "The affected invariant holds" },
+    inactive: { command: "false", expect: "The unaffected invariant" },
+    unrelated: { command: "false", expect: "A path-matched catalogue check", paths: ["app.txt"] },
+    unscoped: { command: "false", expect: "An unscoped catalogue check" },
+  }, behaviours: { feature: { description: "The planned feature works", paths: ["feature.txt"] } }, invariants: {
+    affected: { description: "Preserve the affected contract", checks: ["active"], paths: ["app.txt"] },
+    unaffected: { description: "Preserve another contract", checks: ["inactive"], paths: ["other.txt"] },
+  } }));
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Verify the requested outcome", requirements: [
+    { id: "named", expect: "The planned check passes", checks: ["planned"] },
+    { id: "behaviour", expect: "The planned behaviour works", behaviours: ["feature"] },
+  ] }));
+  const result = run(value, { PR_VERIFY_CHECKS: "printf 'Workflow assertion\\n'", PR_VERIFY_PLAN: ".groundwork/plans/pr.json" });
+  expect(result.code).toBe(0);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["required", "planned", "journey", "active", "configured-checks"]);
+  expect(result.report.selection.invariants).toEqual(["affected"]);
+  expect(result.report.selection.reasons.active).toContain("invariant: affected");
+  expect(result.report.selection.omitted).toEqual(["inactive", "unrelated", "unscoped"]);
+  expect(result.report.verification.coverage.every(item => item.status === "verified")).toBe(true);
+});
+
+test("a workflow block is retained when it only contains a catalogue command as part of a larger block", () => {
+  const value = fixture();
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "true", expect: "A required catalogue check passes", required: true },
+  } }));
+  const result = run(value, { PR_VERIFY_CHECKS: "true\nprintf 'Workflow-specific assertion\\n'" });
+  expect(result.code).toBe(0);
+  expect(result.report.verification.checks.map(check => check.name)).toEqual(["feature", "configured-checks"]);
+  expect(readFileSync(join(value.output, "checks.log"), "utf8")).toContain("Workflow-specific assertion");
+});
+
+test("explicit PR output remains a portable bundle when matching check receipts are reused", () => {
+  const value = fixture();
+  write(join(value.project, ".groundwork/verify.json"), JSON.stringify({ checks: {
+    feature: { command: "printf 'Retained assertion\\n'", expect: "The automated result is retained", reuse: true },
+  } }));
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Retain portable proof", requirements: [
+    { id: "behaviour", expect: "The automated result is retained", checks: ["feature"] },
+  ] }));
+  const overrides = { PR_VERIFY_CHECKS: "", PR_VERIFY_PLAN: ".groundwork/plans/pr.json" };
+  expect(run(value, overrides).code).toBe(0);
+  const previous = value.output;
+  value.output = join(value.root, "second-evidence");
+  const result = run(value, { ...overrides, PR_VERIFY_OUTPUT: value.output });
+  expect(result.code).toBe(0);
+  expect(result.report.verification.checks[0].receipt.disposition).toBe("reused");
+  const portable = join(value.root, "portable");
+  renameSync(value.output, portable);
+  rmSync(previous, { recursive: true });
+  const retained = refreshEvidence(portable, result.report.verification.checks, result.report.verification.observations);
+  expect(retained.problems).toEqual([]);
+  expect(retained.checks[0].status).toBe("passed");
+  expect(readFileSync(join(portable, retained.checks[0].log), "utf8")).toContain("Retained assertion");
 });
 
 test("local PR artifacts cannot recursively copy their own evidence directory", () => {
@@ -223,6 +396,9 @@ test("missing configured assets and changed source leave verification inconclusi
   const changed = run(fixture("mutate"));
   expect(changed.code).toBe(2);
   expect(changed.report.problems.join(" ")).toContain("source changed");
+  const committed = run(fixture("commit"));
+  expect(committed.code).toBe(2);
+  expect(committed.report.problems.join(" ")).toContain("source changed");
 });
 
 test("an unavailable CI credential is reported instead of starting an interactive authentication flow", () => {

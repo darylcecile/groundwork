@@ -26,7 +26,8 @@ Write the designated plan file as JSON:
 
 - Every requested outcome needs a requirement. Preserve meaningful constraints and relevant existing behaviour; do not expand the task into unrelated work.
 - `checks` and `behaviours` are optional bindings to IDs in the supplied context. Bind a check only if it actually asserts that requirement. A generic build or lint pass does not establish an application's user behaviour.
-- Unbound requirements will need evidence-backed observations from the verification agent.
+- Unbound requirements will need evidence-backed observations from the verification agent. Set `"review": true` only when the requirement needs an explicit evidence-backed review in addition to its check bindings, such as a visual inspection or design judgment that automated assertions do not establish.
+- The runner schedules plan-bound checks and covering behaviour checks. When their evidence completes every requirement, including any required review, it skips the verification agent. Bind existing assertions accurately so completed work can be reused.
 - Project invariants are added by the runner. Reserve IDs beginning with `invariant:` for it.
 - If an outcome needs unavailable information or services, retain it in the plan so the final report can identify it as unverified.
 - Write only the plan file. This phase reads and plans; it does not run checks or change the proposed implementation.

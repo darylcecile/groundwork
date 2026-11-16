@@ -17,6 +17,16 @@ Keep actual roles, permissions, policies, thresholds, and budgets in the project
 - Save evidence that supports the claim: observations, assertions, traces, or images.
 - Inspect the evidence before describing a command's success as verified behaviour.
 
+## Reuse a deterministic result
+
+- Bind plan requirements to the checks and behaviours that actually establish them; the plan schedules those checks alongside required and invariant checks.
+- Enable `reuse` only when declared inputs fully determine the check. Include relevant environment variables and ignored files; all source content remains part of matching.
+- Inspect the receipt's provenance and retained evidence. Reuse carries forward an earlier observation, not a new live exercise.
+- Use `--fresh` for changing services, undeclared runtime state or a requirement for a new observation. Repeated trials, baseline comparisons and setup/cleanup checks run afresh.
+- Mark a requirement `review: true` when it needs an evidence-backed review observation, such as visual judgement. Inspect the captured state before recording `kind: "review"`.
+- Keep failures and unavailable observations visible. A later pass or agent review cannot erase an earlier failure in the run.
+- Hand off the run's explicit ID and evidence link; do not assume a shared latest pointer still names your invocation.
+
 ## UI and batch interactions
 
 Use when a changed screen, control, or batch operation affects user actions.

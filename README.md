@@ -33,12 +33,14 @@ Open the project in Copilot or OpenCode and say:
 
 > Use verify-work to set this project up. Reuse its existing tools and start with one real user journey. Then help me make a small change and show evidence that it works.
 
-The agent explores a real journey, runs `groundwork init` and fills in two files under `.groundwork/`:
+The agent explores a real journey and runs `groundwork init`. Project-owned verification lives under `.groundwork/`:
 
-- **`.groundwork/VERIFY.md`:** the behaviour guide—how to run the project, reach the feature, and observe the expected result.
-- **`.groundwork/verify.json`:** named executable checks, with optional behaviour catalogue entries and enforced project invariants.
+- **`VERIFY.md`:** a thin entry point for setup, shared constraints and catalogue navigation.
+- **`verify.json`:** shared executable checks, context and enforced project invariants.
+- **`guides/<feature>.md` or `maps/<area>.md`:** bounded journey instructions and subsystem explanations.
+- **`verify.d/<feature>.json`:** feature checks and catalogue entries, discovered automatically alongside the shared configuration.
 
-Root **`AGENTS.md`** points agents to these files. Commit the guide, configuration and `.groundwork/.gitignore` with the project when ready. Existing check configurations remain valid; add catalogue entries and richer drivers as they become useful.
+Root **`AGENTS.md`** points agents to the workflow. Commit reusable guides, configuration and `.groundwork/.gitignore` with the project when ready. Existing configurations remain valid. A feature can add its own guide and configuration fragment without editing a central include list or guide index.
 
 Use the [`explain` skill](skills/explain/SKILL.md) for concise, friendly technical explanations that reduce jargon while preserving meaning.
 
@@ -48,7 +50,7 @@ Continue giving the agent tasks normally. For example: **“Make my theme select
 
 ## Behaviour Catalogue
 
-The catalogue in `.groundwork/verify.json` connects stable behaviour IDs to descriptions, source `paths`, entry points (`entry`) and guides (`guide`). Named executable checks link to the behaviours they actually assert through `covers`. For the theme request, a `theme-persistence` behaviour could point to the preferences code and a restart guide, with a `theme-persists` check covering it.
+The merged catalogue from `.groundwork/verify.json` and `.groundwork/verify.d/*.json` connects stable behaviour IDs to descriptions, source `paths`, entry points (`entry`) and guides (`guide`). Named executable checks link to the behaviours they actually assert through `covers`. For the theme request, a `theme-persistence` behaviour could point to the preferences code and a restart guide, with a `theme-persists` check covering it. References are validated across files; duplicate IDs are errors rather than overrides.
 
 Project invariants record constraints that must keep holding, such as malformed settings never overwriting valid preferences. Each invariant names real enforcing `checks` and can declare a path scope. A behaviour may initially have no mapped check; the catalogue exposes that verification gap.
 
@@ -77,7 +79,7 @@ That answer can stay in chat. Project adoption and explicit mapping requests ret
 
 > Use explore to map preferences under .groundwork/maps/ and connect it to the existing verification guide and checks.
 
-Maps are tracked documents linked from `.groundwork/VERIFY.md` and relevant catalogue entries. They identify the inspected source and distinguish source findings from runtime observations. Revalidate affected claims against current source before reuse and refresh them as the implementation changes. Before a nontrivial change, exploration supplies the context for task planning; current findings can be reused within the task.
+Maps are tracked documents reached through relevant catalogue entries and feature guides. They identify the inspected source and distinguish source findings from runtime evidence, which stays with its run. Keep maps focused on enduring behaviour and ownership, without task, PR or run histories. Revalidate affected claims against current source before reuse. Before a nontrivial change, exploration supplies the context for task planning; current findings can be reused within the task.
 
 ## Tasks
 
@@ -85,7 +87,7 @@ The [`implement` skill](skills/implement/SKILL.md) turns that context into `.gro
 
 For theme persistence, the definition of done should require a fresh application process to read the saved selection. That gives both the implementer and reviewer an observable outcome to work towards.
 
-For multi-part changes, save a separate JSON verification plan in `.groundwork/plans/` stating the goal and requirements, with expectations bound to check or behaviour IDs. The runner freezes a plan snapshot into the run before execution. Task Markdown is agent working context, not a CLI-parsed plan. In the local CLI, `--plan` adds required coverage; it does not schedule bound checks by itself. Select checks by name, through `--changed`, or by running all checks. Straightforward changes can track verification requirements in chat.
+For multi-part changes, save a separate JSON verification plan in `.groundwork/plans/` stating the goal and requirements, with expectations bound to check or behaviour IDs. The runner freezes the plan and schedules its bound checks, including checks covering its behaviours, alongside required and active invariant checks. Task Markdown is agent working context, not a CLI-parsed plan. Add `review: true` to a requirement that also needs an evidence-backed review observation. Straightforward changes can track verification requirements in chat.
 
 ## Judgement
 
@@ -108,20 +110,30 @@ groundwork map theme-persistence              # View feature relationships and c
 groundwork verify                            # Run every configured check
 groundwork verify theme-persists --plan .groundwork/plans/task.json
 groundwork verify --changed main --plan .groundwork/plans/task.json
-groundwork view report                       # Inspect the latest result and evidence
+groundwork verify theme-persists --fresh      # Execute even if a reusable receipt exists
+groundwork view report                       # Inspect this workspace's latest result
+groundwork view report <id>                  # Inspect a specific run
 ```
 
-Named and change-aware runs include required checks and active invariant checks. With `--changed`, scoped invariants follow matching paths and unscoped invariants always apply; otherwise all invariants are active. Without names or `--changed`, every configured check runs. Inspect unmapped changes and behaviours without checks for planning gaps.
+Named, plan-based and change-aware runs include required checks and active invariant checks. With `--changed`, scoped invariants follow matching paths and unscoped invariants always apply; otherwise all invariants are active. Without names or `--changed`, every configured check is selected, including when a plan is supplied. Inspect unmapped changes and behaviours without checks for planning gaps.
 
 Use `--base <ref>` for real baseline comparisons with drivers explicitly opted into `compare` and targeting `GROUNDWORK_SOURCE_DIR`. A regression comparison needs the intended baseline assertion failure and candidate success under the same declared context; measurement comparisons need matching workloads. Ordinary checks run against the candidate only. `--changed` selects checks; it does not perform a baseline comparison.
 
-Runs retain any plan snapshot, results, logs, observations, measurements and trial artifacts under `.groundwork/runs/<id>/`. An initialized run becomes the latest before checks execute, so an interrupted run cannot reuse an earlier success. CLI execution outcomes are:
+Runs retain the plan, results, logs, observations, measurements and trial artifacts in the [external evidence store](#evidence-storage). An initialized run becomes this workspace's latest before checks execute, so an interrupted attempt remains incomplete. Each invocation reports its own run ID even when another run starts concurrently. CLI execution outcomes are:
 
 - **Passed (`0`):** selected checks, planned coverage, and required evidence are complete.
 - **Failed (`1`):** an assertion, observation, or measurement failed; inspect the retained result.
-- **Inconclusive (`2`):** setup, evidence, coverage, comparison, or source freshness is incomplete.
+- **Inconclusive (`2`):** setup, evidence, coverage, comparison, or input freshness is incomplete.
 
 The agent can also run `bun <skill-directory>/verify.mjs` from the project when `groundwork` is unavailable on its PATH. See the [verification reference](skills/verify-work/references/verification.md) for plan/configuration examples, driver results and the comparison contract, and the [playbooks](skills/verify-work/playbooks.md) for choosing relevant cases.
+
+### Incremental evidence
+
+Checks execute by default. A deterministic check can opt into reusable receipts with `reuse: true`, or declare extra inputs with `reuse: { "env": ["TZ"], "files": [".local-fixture.json"], "revision": true }`. A receipt records an executed check and its retained evidence. Reuse requires matching source content, check definition, engine, runtime, context, plan and declared inputs, with intact evidence. Environment values are digested rather than included in the receipt as plain text.
+
+Opt in only when those inputs fully determine the result. Declare relevant ignored files explicitly; live services and changing external state usually need fresh execution. Source matching covers all project source inputs, not just the check's `paths`. Repeated trials, baseline comparisons and checks with setup or cleanup execute afresh. `--fresh` bypasses reuse for the selected run.
+
+Reports show whether each check executed or reused a receipt. Reuse preserves the original observation; it does not create a new live or visual observation. Review the evidence before claiming it establishes the current requirement.
 
 ## Local portal
 
@@ -131,16 +143,16 @@ Use the project selector in the top bar to switch repositories. The portal remem
 
 The server exits after 30 minutes without an open portal or recent requests. The next CLI command starts it again with the registered projects available; an updated server build replaces the shared daemon automatically.
 
-The portal reads the project's existing files:
+The portal reads saved evidence and the project's catalogue:
 
-- **Reports:** browse run history, check results, requirement outcomes, observations, trials and comparisons.
+- **Reports:** browse run history, check results, saved receipts, requirement outcomes, observations, trials and comparisons.
 - **Evidence:** open logs, images, recordings and structured evidence in a preview modal without losing your place. HTML renders as a saved-page preview; originals remain downloadable.
 - **Catalogue:** explore behaviours, enforcing invariants, check bindings, implementation paths and guides.
 - **Map:** explore connected behaviours on a React Flow canvas with pan, zoom and fit-to-view controls. Select a node to inspect its dependencies, consumers and verification pointers.
 
-File changes update the open portal automatically. Results are labelled as **saved snapshots**: browsing does not rerun verification or recheck source freshness. An unfinished report stays unfinished; it is not assumed to be an active process. Use `groundwork view report` for the existing freshness reassessment.
+File changes update the open portal automatically. Results are labelled as **saved snapshots**: browsing does not rerun verification or reassess source, evidence or receipt inputs. An unfinished report stays unfinished; it is not assumed to be an active process. Use `groundwork view report` for freshness reassessment.
 
-The portal supports local and PR run reports, including legacy `.verify/` storage. Browsing preserves report and evidence files. Map relationships come from the existing catalogue's `dependsOn` metadata; unrecorded relationships stay unrecorded.
+The portal supports local and PR reports in the external store and legacy repository-local storage. Browsing preserves report and evidence files. Map relationships come from the merged catalogue's `dependsOn` metadata; unrecorded relationships stay unrecorded.
 
 ## Trust
 
@@ -148,7 +160,7 @@ Confidence belongs to a specific claim with a traceable chain: **requirement →
 
 Requirement outcomes are distinct from CLI execution status: **verified** means observations support the requirement, **failed** means an observation contradicts it, and **unverified** means the necessary observation is missing or blocked. A passing persistence check supports the process and storage scenario actually exercised; it does not establish every platform or rendering path. Keep those limits visible in the handoff.
 
-The source fingerprint covers Git `HEAD`, tracked local changes and non-ignored untracked inputs, excluding Groundwork's local runtime files. `groundwork view report` rechecks source freshness and saved evidence separately without rerunning commands. Changed source or missing or changed evidence prevents reusing prior success. Relevant ignored inputs, external services and fixture/workload assumptions need declared, non-secret context and fresh observations when they change.
+Source matching covers tracked and non-ignored untracked content, excluding Groundwork's runtime files. The Git revision is retained for provenance; revision-sensitive reusable checks can require it with `reuse.revision`. `groundwork view report [id]` rechecks source and saved evidence without rerunning commands. For checks with receipt keys, it also recomputes the receipt identity: changed declared environment values, ignored files, engine, runtime or context can make a prior pass inconclusive even when source is unchanged. Checks without receipt keys receive source/evidence reassessment only. External services and fixture/workload assumptions still need appropriate observations.
 
 Start with one complete loop: reproduce a problem, fix it, rerun the same behaviour and inspect the evidence. Tell the agent where you still had to intervene or could not trust the result; improve the relevant project pattern, check, driver or skill from that concrete experience.
 
@@ -157,31 +169,37 @@ Start with one complete loop: reproduce a problem, fix it, rerun the same behavi
 ```text
 AGENTS.md                     Agent-discoverable workflow reference
 .groundwork/
-  VERIFY.md                   Behaviour guide
-  verify.json                 Checks, behaviours and invariants
-  .gitignore                  Ignore only local working files and evidence
+  VERIFY.md                   Stable setup, shared constraints and navigation
+  verify.json                 Shared checks, context and invariants
+  verify.d/                   Auto-discovered feature configuration fragments
+  guides/                     Bounded feature journeys
+  .gitignore                  Ignore local working files and legacy evidence
   scripts/                    Reusable Groundwork-owned drivers and helpers
   config/                     Supporting tool configs, loaded explicitly
   maps/                       Reusable subsystem and feature maps
   plans/                      Local JSON verification plans (ignored)
   tasks/                      Local Markdown implementation notes (ignored)
   tmp/                        Scratch files (ignored)
-  runs/                       Retained run evidence (ignored)
-  latest                      Latest CLI run identifier (ignored)
 ```
 
 Create supporting directories only when needed. Reuse existing project tools; new Groundwork-owned helpers and configs belong here. Commands still run from the project root, and check path patterns and catalogue guide references are project-root-relative. Tools with mandatory discovery locations, such as [GitHub Actions' `.github/workflows/`](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows), retain those locations.
 
 Keep `.groundwork/` itself tracked: changes to its guide, checks, scripts and configs must participate in source freshness and change-aware selection. Its own `.gitignore` handles generated output without changing the project's root ignore file.
 
+### Evidence storage
+
+Generated runs and reusable receipts live outside the checkout. The storage root is `GROUNDWORK_STATE_HOME` when set, otherwise `$XDG_STATE_HOME/groundwork`, defaulting to `~/.local/state/groundwork`. Worktrees of the same repository share an evidence namespace; each workspace has its own latest-run pointer. Use the run ID and evidence paths returned by the command for a precise handoff.
+
 ### Existing projects
 
-Run `groundwork init` again to move legacy root `verify.json`, `VERIFY.md` and `.verify/` contents into `.groundwork/`. It preserves existing content, updates catalogue references to the moved guide and refreshes the generated `AGENTS.md` instruction. Conflicting destinations, including names differing only in case or Unicode normalisation, stop migration before files are moved. A legacy `.verify/.gitignore` is preserved as the inactive `.groundwork/legacy-verify.gitignore`, so old runtime ignore rules cannot hide reusable inputs. Review custom Markdown links in a moved guide and any references to old paths when relocating your own helper scripts.
+`groundwork init`, `groundwork verify` and `groundwork view report` automatically preserve `.groundwork/runs`, `.verify/runs` and their latest pointers in the external store. Generated originals are removed only after preservation. Migrated reports remain historical evidence; migration does not turn them into reusable receipts or upgrade their source identity.
 
-The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root configuration supported when that file is absent. New runs always use `.groundwork/runs/`; the CLI can still read legacy evidence until a new run is started or it is migrated. Rerun verification after migration because the source paths have changed.
+Run `groundwork init` to move legacy authored files into `.groundwork/` and refresh the generated `AGENTS.md` instruction. It preserves custom content and refuses conflicting destinations. A moved root guide gets updated catalogue references; review its custom relative Markdown links. Existing authored guides are preserved, not automatically split into features. Put new journeys in bounded guides or maps and add feature fragments as needed.
+
+The CLI and PR runner prefer `.groundwork/verify.json`, with legacy root `verify.json` supported when the canonical file is absent. Both load `.groundwork/verify.d/*.json` automatically and also support projects configured entirely through fragments.
 
 ## Further reading
 
 - [Workflow and confidence framework](WORKFLOW.md): the working loop, evidence standards and handoff.
-- [PR verification workflow](pr-verification/README.md): a final CI pass with project checks, agent-led verification and a PR comment linking results and evidence.
+- [PR verification workflow](pr-verification/README.md): a final CI pass with project checks, agent verification for remaining gaps and a PR comment linking results and evidence.
 - [CONTRIBUTING.md](CONTRIBUTING.md): working on the toolkit.

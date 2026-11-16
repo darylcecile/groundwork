@@ -1,5 +1,7 @@
 # Groundwork behaviour guide
 
+Add new feature journeys in bounded `.groundwork/guides/<feature>.md` or subsystem maps, with catalogue entries and checks in auto-discovered `.groundwork/verify.d/<feature>.json`. Use `groundwork view guide [query]` for discovery; new features need no central include list or root index update. Keep task, PR and run histories with their own records.
+
 ## Run and control
 
 - CLI: `bun skills/verify-work/verify.mjs <command>` or the installed `groundwork`.
@@ -13,9 +15,9 @@
 
 ### Adopt a project
 
-Start with an existing project that has its own instructions and ignore rules. Run `groundwork init`. It creates `.groundwork/VERIFY.md`, `.groundwork/verify.json` and local ignore rules, with root `AGENTS.md` pointing agents to the guide and checks. Existing content survives, and a second run leaves it intact. Legacy root verification files and `.verify/` evidence migrate into `.groundwork/`; conflicting destinations stop migration without overwrites.
+Start with an existing project that has its own instructions and ignore rules. Run `groundwork init`. It creates `.groundwork/VERIFY.md`, `.groundwork/verify.json` and local ignore rules, with root `AGENTS.md` pointing agents to the guide and checks. Existing authored content survives, and a second run leaves it intact. Legacy authored files migrate into `.groundwork/` without overwriting conflicting destinations. Generated `.groundwork/runs`, `.verify/runs` and latest pointers migrate to external storage automatically on `init`, `verify` or `view report`, with originals removed only after preservation. Migration does not split authored guides or turn historical reports into reusable receipts.
 
-Reusable Groundwork-owned helpers and supporting configs belong in `.groundwork/scripts/` and `.groundwork/config/`. Plans, task notes, scratch files and run output live in ignored subpaths. Commands run from the project root, even when invoked inside `.groundwork/`. Changes to reusable verification inputs invalidate a saved result; runtime files do not.
+Reusable Groundwork-owned helpers and supporting configs belong in `.groundwork/scripts/` and `.groundwork/config/`. Plans, task notes and scratch files live in ignored subpaths. Runs and receipts use `GROUNDWORK_STATE_HOME`, otherwise `$XDG_STATE_HOME/groundwork`, defaulting to `~/.local/state/groundwork`. Worktrees share a repository evidence namespace with workspace-specific latest pointers. Commands run from the project root, even when invoked inside `.groundwork/`. Changes to reusable verification inputs invalidate saved applicability; runtime files do not.
 
 ### Explore a subsystem
 
@@ -39,7 +41,9 @@ Run CLI commands in two different repositories outside CI. Both projects must re
 
 Exercise simultaneous registrations and restart the daemon: both projects should remain available. Use the same run ID in two fixtures to establish that their reports and evidence stay isolated. Changing or registering another project must not switch the current browser view or reset its inspection state. A missing project should leave other projects usable.
 
-Browse reports and inspect check details, requirement coverage, observations and evidence. Outcomes are saved snapshots: an unfinished local run is not labelled as actively running, and saved success does not claim current source or evidence freshness. Empty projects, unreadable reports and missing files need useful UI. File changes refresh the open view while retaining navigation.
+Browse reports and inspect check details, requirement coverage, observations and evidence. Outcomes are saved snapshots: an unfinished local run is not labelled as actively running, and saved success does not claim current source, evidence or receipt-input freshness. Empty projects, unreadable reports and missing files need useful UI. File changes refresh the open view while retaining navigation.
+
+Inspect executed and reused receipt details, including the original run metadata. A reused result is labelled as an earlier result, not a new execution. Both external and legacy storage remain readable; viewing a saved receipt does not reassess its current applicability.
 
 Browse the current catalogue and select a behaviour on the React Flow map canvas. Pan, zoom and fit the graph; follow its declared dependencies or derived consumers; inspect its checks, source paths and guide. The map must remain usable with no relationships, cycles or missing check bindings. Viewing these surfaces does not execute checks or modify configuration, reports or evidence.
 
@@ -49,9 +53,11 @@ The `tests` check covers the API, file boundaries and daemon lifecycle. `portal-
 
 ### Plan and select verification
 
-Before changing behaviour, record a small plan such as `.groundwork/plans/task.json`, with each requirement bound to the assertions that establish it. Run relevant checks with `--plan`; omitted required coverage must remain unverified.
+Before changing behaviour, record a small plan such as `.groundwork/plans/task.json`, with each requirement bound to the assertions that establish it. `--plan` adds bound checks and checks covering its behaviours to the selection, including named and change-aware runs. Required checks and active invariants remain included. A requirement marked `review: true` also needs an evidence-backed `kind: "review"` observation explicitly covering its requirement ID.
 
-Use a disposable project's catalogue to exercise `view guide [query]`, named selection, and `--changed <ref>`. Required checks and active invariant checks must run. Changes matching check or catalogue paths select their checks; legacy unscoped checks remain conservative. Unmapped paths and behaviours without checks remain visible planning signals. Guide inspection reports stale references without executing commands.
+Use a disposable project's catalogue to exercise `view guide [query]`, named selection, and `--changed <ref>`. The base and `.groundwork/verify.d/*.json` compose into one catalogue; fragment-only projects work too. Validate references across files and report duplicate IDs or conflicting context values with their source paths. Changes matching check or catalogue paths select their checks; legacy unscoped checks remain conservative. Unmapped paths and behaviours without checks remain visible planning signals. Guide inspection reports stale references without executing commands.
+
+For opted-in deterministic checks, exercise unchanged-input receipt reuse and `--fresh`. Source content, check/engine/runtime identity, context, plan, declared environment values and explicit input files govern matching. Changed or unavailable evidence prevents reuse; a reused failure stays failed. Repeated trials, baseline comparisons and checks with setup/cleanup execute afresh. Inspect the invocation's own run using `groundwork view report <id>` rather than assuming it is still latest.
 
 ### Exercise a driver and compare revisions
 
@@ -71,10 +77,10 @@ Inspect the saved plan, requirement coverage, trial logs, observations, and arti
 
 ### Final PR verification
 
-The reusable workflow is `.github/workflows/verify.yml`; its runtime and prompt live in `pr-verification/`. It runs the importing project's configured checks and an agent-led pass, captures evidence, and updates the importing PR's verification comment. It discovers `.groundwork/verify.json` (with legacy fallback), and local evidence defaults to the selected project's `.groundwork/runs/pr-<id>/`. The integration tests cover failures, missing evidence, source changes, nested project paths, and comment targeting and updating.
+The reusable workflow is `.github/workflows/verify.yml`; its runtime and prompt live in `pr-verification/`. It runs the importing project's selected checks, then uses the agent for remaining verification gaps, including unsatisfied review obligations, captures evidence, and updates the importing PR's verification comment. Valid exact-ID review evidence can satisfy a review obligation without another agent pass. It discovers base configuration (with legacy fallback) and feature fragments. Local evidence defaults to the external store; CI supplies runner-temporary output. The integration tests cover failures, missing evidence, source changes, nested project paths, and comment targeting and updating. A later agent pass cannot erase a failed check.
 
 ## Environment and evidence
 
-Requires Bun, Git, and Bash. Tests use disposable local projects and controlled integrations without network credentials. `VERIFY_TEST_TMPDIR` selects their temporary parent directory when needed. Test fixtures are removed after use; recorded run evidence remains under `.groundwork/runs/`.
+Requires Bun, Git, and Bash. Tests use disposable local projects and controlled integrations without network credentials. `VERIFY_TEST_TMPDIR` selects their temporary parent directory when needed; `GROUNDWORK_STATE_HOME` isolates evidence storage. Test fixtures are removed after use; recorded run evidence remains in the external store.
 
 Keep fixture, mocked-service, and workload context non-secret. The runner records source fingerprints and checks evidence freshness; relevant external services and ignored inputs still need explicit observations when they change.

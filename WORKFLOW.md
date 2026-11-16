@@ -7,7 +7,7 @@
 1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
 2. **Choose how to prove it.** Find the real path and existing checks; define success assertions before changing the implementation. Once the target and flow are known, batch deterministic multi-step browser, device, API, or CLI verification in an existing driver/test or the smallest script before executing—even on the first run. Keep interactive discovery bounded to unknowns and preserve sequential stateful order. For a bug, reproduce the reported failure when possible.
 3. **Make the smallest suitable change.** Follow the project's established patterns. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
-4. **Verify and review.** Exercise the changed behaviour through the chosen checks, run the project's required checks, and inspect the assertions, saved evidence, and complete diff for missed requirements, regressions, unnecessary complexity, and unrelated changes. Rerun affected checks only when changes, failures, stale evidence, or missing evidence/coverage justify it; use the check command rather than manual replay. Stop when the requested outcome and required checks are satisfied.
+4. **Verify and review.** Submit selected checks and any saved plan in one run. Groundwork adds plan-bound checks, required checks and active invariants; eligible deterministic checks may reuse matching receipts. Inspect assertions, evidence and the complete diff for missed requirements, regressions, unnecessary complexity and unrelated changes. Use `--fresh` when a new execution is needed. Stop when the requested outcome and required checks are satisfied.
 5. **Hand back the result.** State what works, the evidence, and any remaining gaps. Include requested delivery state: commits, pushes, PRs, or releases. Resolve every explicit deliverable or explain its blocker.
 
 ## What confidence means
@@ -41,9 +41,11 @@ The CLI reports execution outcomes as passed, failed, or inconclusive. The agent
 
 Choose evidence proportional to the actual change. Reuse existing coverage. Add a regression test when it catches a realistic failure the current tests miss. A fresh review pass can help; a separate agent is useful only when the task warrants delegation and it is permitted.
 
+A reusable receipt preserves an actual check result with its inputs and evidence. It applies only when source content, check/engine/runtime identity, context, plan and declared inputs match. Enable `reuse` only for deterministic checks with complete inputs; declare relevant environment variables and ignored files. A saved screenshot still needs inspection, and a receipt cannot establish a live state that has changed. Requirements marked `review: true` also need an evidence-backed `kind: "review"` observation explicitly covering their ID. The PR agent focuses on remaining gaps, including unsatisfied review obligations; already-valid review evidence needs no redundant agent pass. An agent pass never erases a check failure.
+
 ## The project contribution
 
-Each adopted project supplies a small behaviour guide in `.groundwork/VERIFY.md` and repeatable checks in `.groundwork/verify.json`, linked from root `AGENTS.md`. Start with one journey:
+Each adopted project supplies a thin `.groundwork/VERIFY.md` for setup, shared constraints and catalogue navigation, linked from root `AGENTS.md`. Shared checks live in `.groundwork/verify.json`; feature checks and catalogue entries live in auto-discovered `.groundwork/verify.d/<feature>.json`. Put each new journey in a bounded `.groundwork/guides/<feature>.md` or subsystem map:
 
 1. What does this feature do, and where is its implementation?
 2. What starting state and running services does it need?
@@ -51,19 +53,21 @@ Each adopted project supplies a small behaviour guide in `.groundwork/VERIFY.md`
 4. What must happen?
 5. Which command or direct observation checks that, and where is the evidence?
 
-The `explore` skill establishes those relationships. During adoption or an explicit mapping request, retain stable findings in `.groundwork/maps/<area>.md` and link them from the guide and relevant catalogue entries. Include the inspected source, important ownership and flow relationships, constraints, verification paths, and remaining gaps. Reuse existing documentation and refresh affected maps when behaviour changes. Maps guide investigation; their source-derived claims do not substitute for exercising the behaviour.
+The `explore` skill establishes those relationships. During adoption or an explicit mapping request, retain stable findings in `.groundwork/maps/<area>.md` and link them from the feature's catalogue entry or guide. A new feature needs no central include list or root index edit. Include source references, ownership and flow relationships, constraints, verification paths and enduring gaps. Keep task, PR and run histories in their own records. Maps guide investigation; their source-derived claims do not substitute for exercising the behaviour.
 
 Use `groundwork map [feature]` to inspect the catalogue as an ASCII overview or focused relationship map. Source-backed direct dependencies live in each behaviour's optional `dependsOn` list; the CLI derives consumers from those links. Keep their rationale in the narrative map and use it to choose further investigation and verification.
 
-Reuse the project's existing browser/device tooling, test runner, API client, and development commands. For reusable journeys that lack automation, create a small project-owned driver under `.groundwork/scripts/` and register it in the existing active verification configuration, including legacy root `verify.json`; put supporting configs in `.groundwork/config/`. If no verification configuration exists, invoke the existing runner or script directly. A tiny one-off can use a single batched tool invocation without adding a framework or integration suite.
+Reuse the project's existing browser/device tooling, test runner, API client and development commands. For reusable journeys that lack automation, create a small project-owned driver under `.groundwork/scripts/` and register it in the feature's configuration fragment, preserving existing bindings; put supporting configs in `.groundwork/config/`. Existing canonical and legacy configurations remain supported. If no verification configuration exists, invoke the existing runner or script directly. A tiny one-off can use a single batched tool invocation without adding a framework or integration suite.
 
-Return to the model for decisions, failure diagnosis, or evidence review. Keep per-action narration and successful step logs out of model context; retain full diagnostic logs and artifacts and return concise outcomes, failed assertions, and evidence paths. Keep task plans, notes, scratch files and evidence under `.groundwork/`. Update the behaviour guide when the feature's entry point or behaviour changes.
+Return to the model for decisions, failure diagnosis or evidence review. Keep per-action narration and successful step logs out of model context; retain full diagnostic logs and artifacts and return concise outcomes, failed assertions and evidence paths. Keep local plans, notes and scratch files under `.groundwork/`; generated evidence goes to the external state store. Update only the feature guide or bounded map whose enduring behaviour changed. Automatic migration preserves existing authored guides without interpreting or splitting their contents.
 
 ## The handoff
 
 Keep the final response short, for example:
 
-> Theme selection now survives restart. The persistence scenario and required checks passed; the restarted screen was inspected. Evidence: `.groundwork/runs/<run>/`. Firefox was not exercised. Changes are local; not pushed.
+> Theme selection now survives restart. The persistence scenario executed and passed; required checks reused matching receipts. The restarted screen was inspected. Evidence: run `<id>` and its portal link. Firefox was not exercised. Changes are local; not pushed.
+
+Use the invocation's own run ID with `groundwork view report <id>`, rather than assuming the latest pointer still names it. State whether supporting evidence was newly executed or reused. In CI, link retained evidence paths or uploaded artifacts.
 
 ## Improving the framework
 

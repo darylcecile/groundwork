@@ -46,8 +46,8 @@ GitHub supports sharing this private personal repository's workflow with other p
 
 ### Inputs
 
-- **`checks`** — shell commands for existing project verification. A failed command stops this block and remains a failure in the final result. When omitted, the workflow uses the project's `.groundwork/verify.json` catalogue to select checks for the changed areas, falling back to a legacy root `verify.json`.
-- **`plan`** — optional project-relative JSON plan. Otherwise the agent prepares a plan from the PR, project guidance, and available checks before verification begins.
+- **`checks`** — shell commands overriding ordinary change-based selection. Required, plan-bound and active invariant checks remain included; unrelated path matches do not add checks. A failed command stops this block and remains a failure in the final result. When omitted, the workflow selects changed areas from the merged `.groundwork/verify.json` and `.groundwork/verify.d/*.json` catalogue, with legacy root `verify.json` fallback and fragment-only projects supported.
+- **`plan`** — optional project-relative JSON plan. Otherwise the agent prepares a plan from the PR, project guidance and available checks. Plan bindings schedule their checks and behaviour checks. A requirement can set `review: true` to require an evidence-backed `kind: "review"` observation explicitly covering its ID; already-valid review evidence can satisfy it without another agent pass.
 - **`compare-base`** — opt into running source-aware, comparison-enabled drivers against the PR base. Defaults to `false`.
 - **`setup`** — optional commands to install dependencies and prepare the project.
 - **`artifacts`** — optional newline-separated files or directories relative to the project directory. Paths are copied into the evidence bundle; glob patterns are not used.
@@ -56,24 +56,24 @@ GitHub supports sharing this private personal repository's workflow with other p
 
 Commands run in Bash on an Ubuntu GitHub-hosted runner. Bun and Copilot CLI are installed by the workflow; use `setup` to prepare other toolchains or project dependencies. Setup/check commands should finish; let the test runner or agent manage application startup and cleanup. Commands and the agent receive **`PR_VERIFY_OUTPUT`**, an absolute evidence directory outside the source checkout. The whole job has a 30-minute limit.
 
-For local invocation, the runner defaults to a fresh `.groundwork/runs/pr-<id>/` directory within the selected project, including when `PR_VERIFY_DIRECTORY` selects a nested project. Set `PR_VERIFY_OUTPUT` to use another fresh directory under that project's `.groundwork/runs/` or outside the checkout. The hosted workflow explicitly uses runner temporary storage for its uploaded evidence bundle.
+For local invocation, the runner defaults to a fresh `pr-<id>` run in the external evidence store: `GROUNDWORK_STATE_HOME`, otherwise `$XDG_STATE_HOME/groundwork`, defaulting to `~/.local/state/groundwork`. `PR_VERIFY_DIRECTORY` selects the project, including nested projects. An explicit `PR_VERIFY_OUTPUT` still places the evidence bundle in that fresh directory, either under the selected project's `.groundwork/runs/` or outside the checkout. The hosted workflow continues to use runner temporary storage for its uploaded evidence bundle.
 
 ## What it verifies
 
 1. Check out the importing PR's proposed merge revision and capture its context.
 2. Load the supplied plan or have the agent identify the required outcomes. The runner freezes the plan and adds active project invariants.
-3. Run setup, configured checks, relevant named drivers, and invariant checks, retaining each result. Local and PR verification use the same driver and evidence contract.
-4. Have the agent inspect the results and exercise remaining requirements through relevant UI/API/CLI entry points. Observations name the plan requirements they establish.
+3. Run setup and selected checks/drivers, reusing eligible deterministic receipts when their inputs and evidence match. Required, plan-bound and active invariant checks remain included. Local and PR verification use the same driver and evidence contract.
+4. Assess remaining verification gaps, including unsatisfied review obligations. Skip the verification agent when all requirements already have valid evidence and the assessment passes. Otherwise have it inspect the results and exercise remaining requirements through relevant UI/API/CLI entry points. Observations name the plan requirements they establish.
 5. Validate observations and retained evidence, then account for every requirement. An omitted outcome remains unverified. The agent cannot remove requirements by rewriting the plan.
 6. Upload the evidence bundle and update one PR comment. A reporting job holds the PR-writing permission. It checks the current PR head, title, and description before publishing so a changed request receives a fresh verification plan.
 
-The result is **passed**, **failed**, or **inconclusive**. Failed configured checks remain failures even if the agent reports positive observations. Missing reports, unavailable observations, missing evidence, and source changes prevent a passing result. The verification job fails for both failed and inconclusive outcomes.
+The result is **passed**, **failed**, or **inconclusive**. Failed configured checks remain failures even if the agent reports positive observations. Missing required reports, unavailable observations, missing evidence and source changes prevent a passing result. The verification job fails for both failed and inconclusive outcomes.
 
 ## PR report and assets
 
 The comment includes the PR commit and tested checkout, requirement coverage, setup/check results, behaviour observations, comparison and trial summaries, verification context, gaps, and a **Download evidence** link.
 
-The artifact contains `plan.json`, `result.json`, stage logs, the agent report and transcripts, trial-specific driver evidence, captured agent evidence under `agent/`, and declared project artifacts under `project/`. Screenshots, recordings, traces, and HTML reports are downloadable through that link. Retention follows the importing repository's artifact settings.
+The artifact contains `plan.json`, `result.json`, stage logs, retained driver evidence, any agent report/transcripts and captured evidence under `agent/`, and declared project artifacts under `project/`. A skipped agent phase is recorded without requiring an agent report. Screenshots, recordings, traces and HTML reports are downloadable through that link. Retention follows the importing repository's artifact settings.
 
 The workflow uses the importing project's existing tests and application-control tools, along with project verification guidance when available.
 
