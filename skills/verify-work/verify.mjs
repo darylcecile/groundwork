@@ -148,36 +148,75 @@ async function publishPR(root, { reference, id }) {
   return exitCode(published.publication.status);
 }
 
+function terminalStyle(stream = process.stdout) {
+  const enabled = !("NO_COLOR" in process.env) &&
+    (process.env.FORCE_COLOR ? process.env.FORCE_COLOR !== "0" : Boolean(stream.isTTY));
+  const code = open => value => enabled ? `\x1b[${open}m${value}\x1b[0m` : String(value);
+  const statusColor = { passed: code(32), failed: code(31), inconclusive: code(33) };
+  return {
+    bold: code(1), dim: code(2), link: code(36), heading: code(34),
+    status: (value, label = value) => (statusColor[value] || statusColor.inconclusive)(label.toUpperCase()),
+  };
+}
+
+const coverageStatus = { verified: "passed", failed: "failed", unverified: "inconclusive" };
+
+const shortSha = value => value ? value.slice(0, 12) : "no commit recorded";
+const statusFromState = { success: "passed", failure: "failed" };
+
 async function viewPR(reference) {
   const target = resolvePullRequest(reference);
   const { pull, records, diagnostics, commitStatus } = await listRecords({ api: githubAPI(target), target });
+  const style = terminalStyle();
   const latest = records.find(item => item.current);
   let status = latest?.status || "inconclusive";
   if (latest && commitStatus && commitStatus.state !== "success") status = commitStatus.state === "failure" ? "failed" : "inconclusive";
-  console.log(`PR: ${pull.html_url || target.url}\nCurrent PR head: ${pull.head.sha}`);
-  if (commitStatus) console.log(`Latest publication status: ${commitStatus.state.toUpperCase()}${commitStatus.description ? ` — ${commitStatus.description}` : ""}`);
-  console.log(latest ? `${status.toUpperCase()} — latest published attempt for this PR head: ${latest.record.run.id}`
-    : "INCONCLUSIVE — No published verification record for the current PR head.");
-  for (const diagnostic of diagnostics) console.log(`  ${diagnostic}`);
-  if (records.length) console.log("\nPublished verification history:");
-  for (const item of records) {
-    const { record, publication } = item;
-    console.log(`\n${item.current ? "CURRENT PR HEAD" : "HISTORICAL"} · ${item.status.toUpperCase()} · ${record.run.id} · ${record.run.startedAt || "time unavailable"}`);
-    console.log(`  Tested revision: ${record.run.testedSha || record.run.source?.revision || "no commit recorded"}${record.run.source?.dirty ? " + local changes" : ""}`);
-    console.log(`  Publication head: ${publication?.headSha || "not recorded"}`);
-    console.log(`  Record: ${item.source.url}`);
-    for (const check of record.checks) {
-      console.log(`  ${check.status.toUpperCase()} ${check.name}: ${check.expect}`);
-      if (check.receipt) console.log(`    ${check.receipt.disposition.toUpperCase()}: ${check.receipt.reason}${check.receipt.run ? ` (run ${check.receipt.run})` : ""}`);
-    }
+  const revision = record => `${shortSha(record.run.testedSha || record.run.source?.revision)}${record.run.source?.dirty ? " + local changes" : ""}`;
+  console.log(`${style.bold(style.status(status))} — ${latest ? "latest published attempt for this PR head"
+    : "No published verification record for the current PR head."}`);
+  console.log(`${style.bold(`${target.owner}/${target.repo}#${pull.number || target.number}`)} ${style.dim(`· head ${shortSha(pull.head.sha)}`)} ${style.link(pull.html_url || target.url)}`);
+  if (commitStatus && commitStatus.state !== "success") {
+    const description = (commitStatus.description || "").replace(/\s*\[gw:[^\]]*\]/g, "").trim();
+    console.log(`Latest publication status: ${style.status(statusFromState[commitStatus.state] || "inconclusive")} (${commitStatus.state})${description ? ` — ${description}` : ""}`);
+  }
+  for (const diagnostic of diagnostics) console.log(`  ${/^PR artifacts are unavailable .*reading comments\.$/.test(diagnostic) ? style.dim(diagnostic) : diagnostic}`);
+  if (latest) {
+    const { record, publication } = latest;
+    console.log(`\n${style.heading("Current PR head record")} ${style.dim(`· tested ${revision(record)} · ${record.run.startedAt || "time unavailable"}`)}`);
+    console.log(`  Record: ${style.link(latest.source.url)}`);
+    if (publication?.sourceMatches === false) console.log(`  ${style.bold("Source mismatch:")} the tested source did not match the published PR head.`);
     if (record.plan) console.log(`  Goal: ${record.plan.goal}`);
-    for (const coverage of publication?.assessment?.coverage || record.coverage) {
-      console.log(`  ${coverage.status.toUpperCase()} ${coverage.id}: ${coverage.expect}${coverage.reason ? ` — ${coverage.reason}` : ""}`);
+    const passing = record.checks.filter(check => check.status === "passed");
+    console.log(`  Checks: ${passing.length}/${record.checks.length} passed`);
+    const shown = [...record.checks.filter(check => check.status !== "passed"), ...passing.slice(0, 8)];
+    for (const check of shown) {
+      const label = check.receipt ? style.dim(` (${check.receipt.disposition})`) : "";
+      console.log(`    ${style.status(check.status)} ${check.name}${label}`);
+      if (check.status !== "passed") {
+        console.log(`      ${check.expect}`);
+        if (check.receipt?.reason) console.log(`      ${check.receipt.reason}`);
+      }
     }
-    for (const gap of new Set([...record.gaps, ...(publication?.assessment?.problems || []), ...item.diagnostics])) console.log(`  Gap: ${gap}`);
+    if (passing.length > 8) console.log(style.dim(`    … ${passing.length - 8} more passed checks in the record`));
+    const coverage = publication?.assessment?.coverage || record.coverage;
+    if (coverage.length) {
+      const counts = Object.entries(Object.groupBy(coverage, item => item.status)).map(([key, items]) => `${items.length} ${key}`);
+      console.log(`  Coverage: ${counts.join(", ")}`);
+      for (const item of coverage.filter(entry => entry.status !== "verified")) {
+        console.log(`    ${style.status(coverageStatus[item.status] || "inconclusive", item.status)} ${item.id}: ${item.expect}${item.reason ? ` — ${item.reason}` : ""}`);
+      }
+    }
+    for (const gap of new Set([...record.gaps, ...(publication?.assessment?.problems || []), ...latest.diagnostics])) console.log(`  ${style.bold("Gap:")} ${gap}`);
     for (const [path, url] of Object.entries(decisionLinks(target, record, publication?.headSha || pull.head.sha))) {
-      console.log(`  Decision: ${path} — ${url}`);
+      console.log(`  Decision: ${path} ${style.link(url)}`);
     }
+  }
+  const history = records.filter(item => item !== latest);
+  if (history.length) console.log(`\n${style.heading("Earlier published records")}`);
+  for (const item of history) {
+    const failing = item.record.checks.filter(check => check.status !== "passed").length;
+    console.log(`  ${item.current ? "CURRENT PR HEAD" : "HISTORICAL"} · ${style.status(item.status)} · ${style.dim(`tested ${revision(item.record)} · ${item.record.run.startedAt || "time unavailable"}`)}` +
+      `${failing ? ` · ${failing} not passed` : ""} ${style.link(item.source.url)}`);
   }
   return exitCode(status);
 }

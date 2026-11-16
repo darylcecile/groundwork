@@ -94,6 +94,39 @@ test("publication renders current applicability separately without changing the 
   expect(record.status).toBe("passed");
 });
 
+test("the default report stays short for large runs while details and the payload keep everything", () => {
+  const visible = body => body.slice(0, body.indexOf("<details>"));
+  const checks = Array.from({ length: 150 }, (_, index) => ({ ...check(), name: `check-${index}`, command: `run-check ${index}` }));
+  const record = makeRecord({ run: run(), assessment: assess({ checks }) });
+  const body = renderRecord(record);
+  expect(visible(body)).toContain("Checks: 150 passed");
+  expect(visible(body).split("\n").length).toBeLessThan(10);
+  expect(visible(body)).not.toContain("run-check 149");
+  expect(body).toContain("<code>run-check 149</code>");
+  expect(parseRecord(body)).toEqual({ record, publication: null });
+  const payload = text => text.slice(text.indexOf("<!-- groundwork-record:v1"));
+  expect(payload(body)).toBe(`<!-- groundwork-record:v1\n${JSON.stringify({ record, publication: null })}\n-->\n`);
+
+  const failed = makeRecord({ run: run(), assessment: assess({ checks: [...checks.slice(1), { ...check("failed"), name: "broken" }] }) });
+  expect(visible(renderRecord(failed))).toContain("149 passed, 1 failed");
+  expect(visible(renderRecord(failed))).toStartWith("## Verification — Failed");
+
+  const publication = { headSha: "f".repeat(40), testedSha: "abc123", status: "inconclusive", sourceMatches: false,
+    assessment: { status: "inconclusive", coverage: [], problems: ["one", "two", "three", "four", "five"] } };
+  const overlaid = renderRecord(record, { publication });
+  expect(visible(overlaid)).not.toContain("150 passed");
+  expect(visible(overlaid)).toContain("source does not match the pushed PR");
+  expect(visible(overlaid)).toContain("2 more in the details below");
+  expect(overlaid.slice(overlaid.indexOf("<details>"))).toContain("- five");
+  expect(parseRecord(overlaid)).toEqual({ record, publication });
+
+  const dirty = makeRecord({ run: { ...run(), source: { ...run().source, dirty: true } }, assessment: assess({ checks }) });
+  expect(visible(renderRecord(dirty))).toContain("Tested abc123 + local changes");
+  const matched = renderRecord(dirty, { publication: { headSha: "f".repeat(40), testedSha: "abc123", sourceMatches: true } });
+  expect(visible(matched)).toContain(`Commit: ${"f".repeat(12)}`);
+  expect(visible(matched)).not.toContain("Tested abc123");
+});
+
 test("the hidden payload safely retains long observations and cannot be closed by their content", () => {
   const observed = `${"Detail ".repeat(10000)}--> <script>unexpected</script> & \u2028\u2029`;
   const record = makeRecord({ run: run(), assessment: assess({ observations: [{ ...observation(), observed }] }) });

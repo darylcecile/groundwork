@@ -1027,19 +1027,61 @@ test.each([["passed", 0], ["failed", 1], ["inconclusive", 2], ["historical", 2]]
   write(root, "README.md", "An unadopted directory.\n");
   const before = snapshot(root);
   const evidence = snapshot(process.env.GROUNDWORK_STATE_HOME);
-  const viewed = invoke(root, ["view", "pr", github.url], github.env);
+  const viewed = invoke(root, ["view", "pr", github.url], { ...github.env, FORCE_COLOR: "" });
   expect(viewed.code).toBe(code);
-  expect(viewed.output).toContain(`Current PR head: ${head}`);
-  expect(viewed.output).toContain(`Tested revision: ${"b".repeat(40)}`);
-  expect(viewed.output).toContain("HISTORICAL");
-  expect(viewed.output).toContain("Decision: .groundwork/decisions/local.md");
-  expect(viewed.output).toContain("PASSED check: The source assertion passes");
-  expect(viewed.output).toContain(`EXECUTED: ${template.checks[0].receipt.reason}`);
-  if (outcome !== "historical") expect(viewed.output).toContain(`${outcome.toUpperCase()} — latest published attempt for this PR head: latest-attempt`);
-  if (outcome === "inconclusive") expect(viewed.output).toContain("Declared inputs need a fresh local verification");
+  expect(viewed.output).not.toContain("\x1b[");
+  expect(viewed.output).toContain(`example/project#7 · head ${head.slice(0, 12)} https://`);
+  expect(viewed.output).toContain(`tested ${"b".repeat(12)}`);
+  expect(viewed.output).toContain("HISTORICAL · PASSED");
+  expect(viewed.output).toContain("https://github.example/example/project/pull/7#historical");
+  if (outcome !== "historical") {
+    expect(viewed.output.split("\n")[0]).toBe(`${outcome.toUpperCase()} — latest published attempt for this PR head`);
+    expect(viewed.output).toContain("Decision: .groundwork/decisions/local.md");
+    expect(viewed.output).toContain("Checks: 1/1 passed");
+    expect(viewed.output).toContain("PASSED check (executed)");
+    expect(viewed.output.split(template.checks[0].receipt.reason).length).toBe(1);
+  }
+  if (outcome === "inconclusive") expect(viewed.output).toContain("Gap: Declared inputs need a fresh local verification");
   expect(github.state().calls.filter(call => call.args[0] === "api").every(call => call.args[call.args.indexOf("--method") + 1] === "GET")).toBe(true);
   expect(snapshot(root)).toEqual(before);
   expect(snapshot(process.env.GROUNDWORK_STATE_HOME)).toEqual(evidence);
+  if (outcome === "failed") {
+    const colored = invoke(root, ["view", "pr", github.url], { ...github.env, FORCE_COLOR: "1" });
+    expect(colored.code).toBe(code);
+    expect(colored.output.split("\n")[0]).toMatch(/^\x1b\[.*FAILED.*\x1b\[0m — latest published attempt/);
+    const plain = invoke(root, ["view", "pr", github.url], { ...github.env, FORCE_COLOR: "1", NO_COLOR: "1" });
+    expect(plain.output).not.toContain("\x1b[");
+    expect(plain.output.replaceAll("\n", "")).toBe(colored.output.replace(/\x1b\[[0-9;]*m/g, "").replaceAll("\n", ""));
+  }
+});
+
+test("view pr summarises a large verified plan while keeping unverified requirements visible", () => {
+  const root = project({ check: { command: "true", expect: "The source assertion passes" } });
+  write(root, ".groundwork/plans/task.json", JSON.stringify({ goal: "Ship the large change", requirements: [
+    { id: "outcome", expect: "The requested outcome holds", checks: ["check"] },
+  ] }));
+  expect(invoke(root, ["verify", "--plan", ".groundwork/plans/task.json"]).code).toBe(0);
+  const template = parseRecord(readFileSync(join(saved(root).directory, "report.md"), "utf8")).record;
+  const checks = Array.from({ length: 12 }, (_, index) => ({ ...template.checks[0], name: `check-${index}`,
+    expect: `Long expectation number ${index}` }));
+  const coverage = [
+    ...Array.from({ length: 11 }, (_, index) => ({ ...template.coverage[0], id: `verified-${index}`,
+      expect: `Verified requirement ${index}`, status: "verified" })),
+    { ...template.coverage[0], id: "review", expect: "A human reviews the copy", status: "unverified", reason: "Needs a review observation" },
+  ];
+  const record = { ...template, checks, coverage };
+  const head = "a".repeat(40);
+  const publication = { repository: "example/project", pullRequest: 7, headSha: head, status: "inconclusive", sourceMatches: true,
+    publisher: { id: 41, login: "publisher" }, assessment: { status: "inconclusive", coverage, problems: [] } };
+  const github = fakeGitHub({ head, comments: [{ id: 1, user: { id: 41, login: "publisher" }, body: renderRecord(record, { publication }) }] });
+  const viewed = invoke(temporaryDirectory(), ["view", "pr", github.url], { ...github.env, FORCE_COLOR: "" });
+  expect(viewed.code).toBe(2);
+  expect(viewed.output).toContain("Checks: 12/12 passed");
+  expect(viewed.output).toContain("… 4 more passed checks in the record");
+  expect(viewed.output).not.toContain("Long expectation number");
+  expect(viewed.output).toContain("Coverage: 11 verified, 1 unverified");
+  expect(viewed.output).toContain("UNVERIFIED review: A human reviews the copy — Needs a review observation");
+  expect(viewed.output).not.toContain("Verified requirement");
 });
 
 test("view pr reports a newer pending or unsuccessful publication alongside the retained passing record", () => {
@@ -1054,16 +1096,15 @@ test("view pr reports a newer pending or unsuccessful publication alongside the 
   const comment = { id: 1, user: { id: 41, login: "publisher" }, body: renderRecord(record, { publication }) };
   for (const [state, code] of [["pending", 2], ["error", 2], ["failure", 1]]) {
     const github = fakeGitHub({ head, comments: [comment], statuses: [
-      { context: "groundwork/verification", state, description: "Latest publication attempt" },
+      { context: "groundwork/verification", state, description: "Latest publication attempt [gw:run=x]" },
       { context: "groundwork/verification", state: "success", description: "Earlier completed publication" },
     ] });
-    const viewed = invoke(temporaryDirectory(), ["view", "pr", github.url], github.env);
+    const viewed = invoke(temporaryDirectory(), ["view", "pr", github.url], { ...github.env, FORCE_COLOR: "" });
     expect(viewed.code).toBe(code);
-    expect(viewed.output).toContain(`${state === "failure" ? "FAILED" : "INCONCLUSIVE"} — latest published attempt for this PR head: ${record.run.id}`);
-    expect(viewed.output).toContain(`Latest publication status: ${state.toUpperCase()} — Latest publication attempt`);
-    expect(viewed.output).toContain(`CURRENT PR HEAD · PASSED · ${record.run.id}`);
-    expect(viewed.output).toContain("PASSED check: The original assertion passes");
-    expect(viewed.output).toContain(`REUSED: ${record.checks[0].receipt.reason}`);
+    expect(viewed.output.split("\n")[0]).toBe(`${state === "failure" ? "FAILED" : "INCONCLUSIVE"} — latest published attempt for this PR head`);
+    expect(viewed.output).toContain(`Latest publication status: ${state === "failure" ? "FAILED" : "INCONCLUSIVE"} (${state}) — Latest publication attempt\n`);
+    expect(viewed.output).toContain("Current PR head record");
+    expect(viewed.output).toContain("PASSED check (reused)");
   }
 });
 
