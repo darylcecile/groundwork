@@ -1,0 +1,23 @@
+{
+  "behaviours": {
+    "catalogue": {
+      "description": "Discover behaviours and enforce applicable project invariants",
+      "paths": [
+        "lib/config.mjs",
+        "test/config.test.mjs",
+        ".groundwork/verify.d/0001-check-tests.json",
+        ".groundwork/verify.d/0002-check-portal-build.json",
+        ".groundwork/verify.d/0003-behaviour-portal.json",
+        ".groundwork/verify.d/0004-behaviour-adoption.json",
+        ".groundwork/verify.d/0005-behaviour-coverage.json",
+        ".groundwork/verify.d/0006-behaviour-catalogue.json",
+        ".groundwork/verify.d/0007-behaviour-feature-map.json",
+        ".groundwork/verify.d/0008-behaviour-drivers.json",
+        ".groundwork/verify.d/0009-behaviour-pr-verification.json",
+        ".groundwork/verify.d/0010-invariant-complete-evidence.json"
+      ],
+      "entry": "groundwork view guide / groundwork verify --changed <ref>",
+      "guide": ".groundwork/maps/verification.md#catalogue-and-selection"
+    }
+  }
+}

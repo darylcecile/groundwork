@@ -22,7 +22,7 @@ The supplied references set the direction: light surfaces, compact status rows, 
 
 ## Semantics
 
-Saved report status is historical. It does not imply current source/evidence freshness, and an unfinished run does not imply an active process. A passing set of checks without a plan does not imply complete requirement coverage. Catalogue check bindings are configuration, not observed verification success.
+Saved report status is historical. It does not imply current source/evidence freshness, and an unfinished run does not imply an active process. A passing set of checks without a plan does not imply complete requirement coverage. A reused check result was copied from an earlier run, not run again; its details name the reason and source run. Catalogue check bindings are configuration, not observed verification success.
 
 ## Craft checks
 

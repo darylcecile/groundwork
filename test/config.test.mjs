@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { catalogue, catalogueIssues, configPath, loadConfig, parseConfig, selectChecks } from "../lib/config.mjs";
+import { catalogue, catalogueIssues, configPath, hasConfig, loadConfig, parseConfig, selectChecks } from "../lib/config.mjs";
 
 const directories = [];
 
@@ -107,6 +107,36 @@ test("a check's direct paths and covered behaviour paths both select it", () => 
   expect(selectChecks(config, { changedPaths: ["shared/model.mjs"] }).names).toEqual(["editor"]);
   expect(selectChecks(config, { changedPaths: ["editor/view.mjs"] }).names).toEqual(["editor"]);
   expect(selectChecks(config, { changedPaths: ["other/view.mjs"] }).omitted).toEqual(["editor"]);
+});
+
+test("plan bindings join named and changed selections while required checks and invariants remain active", () => {
+  const config = parseConfig({
+    checks: {
+      required: check({ required: true, paths: ["build/**"] }),
+      manual: check({ paths: ["manual/**"] }),
+      editor: check({ covers: ["editing"] }),
+      persistence: check({ paths: ["storage/**"] }),
+      integrity: check({ paths: ["internal/**"] }),
+      unrelated: check({ paths: ["other/**"] }),
+    },
+    behaviours: { editing: { description: "Edit a document", paths: ["editor/**"] } },
+    invariants: { durable: { description: "Stored data stays valid", checks: ["integrity"] } },
+  });
+  const plan = { goal: "Edit and save a document", requirements: [
+    { id: "save", expect: "Changes survive restarting", checks: ["persistence"], behaviours: ["editing"] },
+  ] };
+  for (const options of [{ names: ["manual"] }, { changedPaths: ["manual/driver.mjs"] }]) {
+    const selection = selectChecks(config, { ...options, plan });
+    expect(selection.names).toEqual(["required", "manual", "editor", "persistence", "integrity"]);
+    expect(selection.reasons.persistence.join(" ")).toContain("plan requirement: save");
+    expect(selection.reasons.editor.join(" ")).toContain("plan behaviour: editing");
+    expect(selection.invariants).toEqual(["durable"]);
+    expect(selection.omitted).toEqual(["unrelated"]);
+  }
+  expect(selectChecks(config, { plan }).names).toEqual(Object.keys(config.checks));
+  expect(() => selectChecks(config, { plan: { goal: "Save", requirements: [
+    { id: "save", expect: "Save works", checks: ["missing"] },
+  ] } })).toThrow("Unknown planned check: missing (requirement save)");
 });
 
 test("catalogue searches descriptions, IDs, paths, and entry points and merges invariant coverage", () => {
@@ -291,6 +321,107 @@ test("namespaced configuration takes precedence over legacy fallback and keeps p
   symlinkSync(join(root, "missing.json"), join(root, ".groundwork/verify.json"));
   expect(configPath(root)).toBe(join(root, ".groundwork/verify.json"));
   expect(() => loadConfig(root)).toThrow(".groundwork/verify.json");
+});
+
+test.each([".groundwork/verify.json", "verify.json"])("feature fragments compose with %s and resolve cross-file references after merging", base => {
+  const root = temporaryDirectory();
+  write(root, base, JSON.stringify({
+    context: { fixture: "shared" },
+    checks: { base: check({ covers: ["editing"] }) },
+    invariants: { durable: { description: "Stored changes survive", checks: ["storage"] } },
+  }));
+  write(root, ".groundwork/verify.d/z-storage.json", JSON.stringify({
+    checks: { storage: check({ covers: ["storage"] }) },
+    behaviours: { storage: { description: "Store a document", dependsOn: ["editing"] } },
+  }));
+  write(root, ".groundwork/verify.d/a-editor.json", JSON.stringify({
+    context: { fixture: "shared", data: "small" },
+    checks: { editor: check({ covers: ["editing"] }) },
+    behaviours: { editing: { description: "Edit a document", dependsOn: ["storage"], paths: ["src/editor/**"], guide: ".groundwork/guides/editor.md#editing" } },
+  }));
+  write(root, ".groundwork/guides/editor.md", "# Editing\n\nUse the editor.\n");
+  write(root, ".groundwork/verify.d/README.md", "Feature fragments live here.\n");
+  const config = loadConfig(root);
+  expect(hasConfig(root)).toBe(true);
+  expect(Object.keys(config.checks)).toEqual(["base", "editor", "storage"]);
+  expect(config.checks.storage.covers).toEqual(["storage", "durable"]);
+  expect(config.behaviours.editing.dependsOn).toEqual(["storage"]);
+  expect(config.context).toEqual({ fixture: "shared", data: "small" });
+  expect(selectChecks(config, { changedPaths: ["src/editor/view.mjs"] }).names).toEqual(["base", "editor", "storage"]);
+  expect(catalogueIssues(config, root)).toEqual([]);
+  expect(catalogue(config, "editing")[0].source).toBe(join(root, ".groundwork/verify.d/a-editor.json"));
+  expect(config.provenance.checks.storage).toBe(join(root, ".groundwork/verify.d/z-storage.json"));
+  expect(parseConfig(config)).toEqual(config);
+});
+
+test("fragment-only adoption is discoverable and canonical config still takes precedence over legacy config", () => {
+  const root = temporaryDirectory();
+  expect(hasConfig(root)).toBe(false);
+  write(root, ".groundwork/verify.d/README.md", "Only JSON files are configuration.\n");
+  expect(hasConfig(root)).toBe(false);
+  write(root, ".groundwork/verify.d/editor.json", JSON.stringify({ checks: { editor: check() } }));
+  expect(hasConfig(root)).toBe(true);
+  expect(Object.keys(loadConfig(root).checks)).toEqual(["editor"]);
+  write(root, "verify.json", JSON.stringify({ checks: { legacy: check() } }));
+  expect(Object.keys(loadConfig(root).checks)).toEqual(["legacy", "editor"]);
+  write(root, ".groundwork/verify.json", JSON.stringify({ checks: { current: check() } }));
+  expect(Object.keys(loadConfig(root).checks)).toEqual(["current", "editor"]);
+  write(root, ".groundwork/verify.json", "{invalid}");
+  expect(() => loadConfig(root)).toThrow(".groundwork/verify.json");
+});
+
+test("duplicate fragment definitions and context conflicts identify both source files", () => {
+  const conflicts = [
+    [{ checks: { editor: check() } }, { checks: { editor: check() } }, "Duplicate checks ID"],
+    [{ behaviours: { editing: { description: "Edit" } } }, { behaviours: { editing: { description: "Edit" } } }, "Duplicate behaviours ID"],
+    [{ invariants: { durable: { description: "Save", checks: ["editor"] } } }, { invariants: { durable: { description: "Save", checks: ["editor"] } } }, "Duplicate invariants ID"],
+    [{ behaviours: { editing: { description: "Edit" } } }, { invariants: { editing: { description: "Edit safely", checks: ["editor"] } } }, "Duplicate catalogue ID"],
+    [{ context: { fixture: "small" } }, { context: { fixture: "large" } }, 'Conflicting context key "fixture"'],
+  ];
+  for (const [first, second, message] of conflicts) {
+    const root = temporaryDirectory();
+    write(root, ".groundwork/verify.json", JSON.stringify({ checks: { editor: check() }, ...first }));
+    write(root, ".groundwork/verify.d/editor.json", JSON.stringify(second));
+    let error;
+    try { loadConfig(root); } catch (caught) { error = caught; }
+    expect(error?.message).toContain(message);
+    expect(error?.message).toContain(join(root, ".groundwork/verify.json"));
+    expect(error?.message).toContain(join(root, ".groundwork/verify.d/editor.json"));
+  }
+});
+
+test("fragment errors retain the owning path for malformed values and unresolved references", () => {
+  const root = temporaryDirectory();
+  const fragment = ".groundwork/verify.d/editor.json";
+  for (const [content, message] of [
+    ["{invalid}", "Cannot read"],
+    [JSON.stringify({ checks: { editor: check({ covers: ["missing"] }) } }), "unknown catalogue reference: missing"],
+    [JSON.stringify({ behaviours: { editor: { description: "Edit", dependsOn: ["missing"] } } }), "unknown behaviour reference: missing"],
+    [JSON.stringify({ invariants: { durable: { description: "Save", checks: ["missing"] } } }), "unknown check reference: missing"],
+    [JSON.stringify({ checks: { editor: check({ reuse: { unknown: true } }) } }), 'unknown field "unknown"'],
+  ]) {
+    write(root, fragment, content);
+    let error;
+    try { loadConfig(root); } catch (caught) { error = caught; }
+    expect(error?.message).toContain(message);
+    expect(error?.message).toContain(join(root, fragment));
+  }
+});
+
+test("reuse declarations normalize opt-in inputs and reject unusable or unknown bindings", () => {
+  const config = parseConfig({ checks: {
+    absent: check(), disabled: check({ reuse: false }), enabled: check({ reuse: true }),
+    inputs: check({ reuse: { env: ["MODE", "REGION", "MODE"], files: ["ignored/data.json", "bun.lock", "bun.lock"], revision: true } }),
+  } });
+  expect(config.checks.absent.reuse).toBe(false);
+  expect(config.checks.disabled.reuse).toBe(false);
+  expect(config.checks.enabled.reuse).toEqual({ env: [], files: [], revision: false });
+  expect(config.checks.inputs.reuse).toEqual({ env: ["MODE", "REGION"], files: ["bun.lock", "ignored/data.json"], revision: true });
+  expect(parseConfig(config)).toEqual(config);
+  for (const reuse of [null, "true", [], { unknown: true }, { env: "MODE" }, { env: [""] }, { revision: "true" }, { files: [42] },
+    ...["../outside", "/absolute", "C:\\outside", "https://example.test/data", "file\0.json", "src/**", "src/?.json", "src/[ab].json", "src/{a,b}.json"].map(path => ({ files: [path] }))]) {
+    expect(() => parseConfig({ checks: { editor: check({ reuse }) } })).toThrow(".checks.editor.reuse");
+  }
 });
 
 test("invalid configuration boundaries, fields, and references are rejected", () => {

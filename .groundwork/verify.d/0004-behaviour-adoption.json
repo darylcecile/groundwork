@@ -1,0 +1,22 @@
+{
+  "behaviours": {
+    "adoption": {
+      "description": "Adopt projects and install or update bundled skills while preserving user setup",
+      "paths": [
+        "skills/**",
+        "lib/distribution.mjs",
+        "lib/layout.mjs",
+        "lib/migration.mjs",
+        "lib/guide-migration.mjs",
+        "package.json",
+        "test/verify.test.mjs",
+        "test/distribution.test.mjs",
+        "test/package.test.mjs",
+        "test/migration.test.mjs",
+        "test/guide-migration.test.mjs"
+      ],
+      "entry": "groundwork init / groundwork install / groundwork update",
+      "guide": ".groundwork/guides/adopt-a-project.md#adopt-a-project"
+    }
+  }
+}

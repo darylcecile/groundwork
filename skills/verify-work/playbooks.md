@@ -17,6 +17,16 @@ Keep actual roles, permissions, policies, thresholds, and budgets in the project
 - Save evidence that supports the claim: observations, assertions, traces, or images.
 - Inspect the evidence before describing a command's success as verified behaviour.
 
+## Reuse a deterministic result
+
+- Bind plan requirements to the checks and behaviours that actually establish them; the plan schedules those checks alongside required and invariant checks.
+- Enable `reuse` only when declared inputs fully determine the check. Include relevant environment variables and ignored files; all source content remains part of matching.
+- Inspect the receipt's provenance and retained evidence. Reuse carries forward an earlier observation, not a new live exercise.
+- Use `--fresh` for changing services, undeclared runtime state or a requirement for a new observation. Repeated trials, baseline comparisons and setup/cleanup checks run afresh.
+- Mark a requirement `review: true` when it needs an evidence-backed review observation, such as visual judgement. Inspect the captured state before recording `kind: "review"`.
+- Keep failures and unavailable observations visible. A later pass or agent review cannot erase an earlier failure in the run.
+- Hand off the run's explicit ID and evidence link; do not assume a shared latest pointer still names your invocation.
+
 ## UI and batch interactions
 
 Use when a changed screen, control, or batch operation affects user actions.
@@ -119,6 +129,15 @@ Expectations and evidence:
 - Invalid settings produce a useful error without silently changing policy.
 - Record the role, resource relationship, configuration, and observed decision safely.
 - Prefer code or data-model prevention for recurring mistakes, then existing automated checks.
+
+## Project metadata migration
+
+Use when adopting or updating an existing Groundwork project. The agent runs normal project commands to trigger conversion and resolves project-specific repairs from repository context.
+
+- Start with the project's actual guide, catalogue and check bindings; preserve their meaning in the active guides and fragments.
+- Confirm discovery reaches the relocated instructions and the same checks run in the same order. Update command inputs that refer to moved files when needed to preserve behaviour.
+- Inspect the resulting diff and links. Successful conversion replaces old bases, guides and ignore archives; authored content remains in active files.
+- A repeated project command should leave the converted metadata unchanged. Configuration and portal reads remain pure.
 
 ## Performance and measurements
 

@@ -1,6 +1,7 @@
 import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { catalogue, catalogueIssues, configPath, loadConfig } from "../lib/config.mjs";
+import { catalogue, catalogueIssues, configPath, hasConfig, loadConfig } from "../lib/config.mjs";
+import { evidenceStore } from "../lib/store.mjs";
 import { assess, context, coverage, ensure, object, statuses, validateAssessment, validateCheck, validatePlan } from "../lib/model.mjs";
 import type { CatalogueResponse, Check, Counts, EvidenceFile, GuideResponse, Measurement, Observation, Report, RunResponse, RunSummary, RunsResponse, Stage, Storage, Trial } from "./types";
 
@@ -11,7 +12,7 @@ export class DataError extends Error {
   constructor(message: string, public status: 400 | 404 = 400) { super(message); }
 }
 
-const storages: Storage[] = ["groundwork", "verify"];
+const storages: Storage[] = ["store", "groundwork", "verify"];
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 const validId = (id: string) => /^[a-zA-Z0-9_-]+$/.test(id);
@@ -38,9 +39,30 @@ function directory(root: string, path: string) {
   return target;
 }
 
+// The external store lives outside the checkout, so its location comes only from evidenceStore(root).
+// Its directory is resolved once on purpose; runs and the latest pointer must then stay inside it without links.
+function storeLocation(root: string) {
+  const store = evidenceStore(root);
+  const base = realpathSync(store.directory);
+  const inside = (path: string) => {
+    const part = relative(store.directory, path).split(sep).join("/");
+    if (!relativeFile(part)) throw new DataError("The evidence store layout leaves its directory.");
+    return part;
+  };
+  return { base, runs: inside(store.runs), latest: inside(store.latest) };
+}
+
+const storageLabel = (storage: Storage) => storage === "store" ? "evidence store" : `.${storage}`;
+
+function runsBase(root: string, storage: Storage) {
+  if (storage !== "store") return directory(root, `.${storage}/runs`);
+  const store = storeLocation(root);
+  return directory(store.base, store.runs);
+}
+
 export function runDirectory(root: string, storage: string, id: string) {
   if (!storages.includes(storage as Storage) || !validId(id)) throw new DataError("Invalid run identifier.");
-  try { return directory(root, `.${storage}/runs/${id}`); }
+  try { return directory(runsBase(root, storage as Storage), id); }
   catch (error) {
     if (missing(error)) throw new DataError("Run not found.", 404);
     throw error;
@@ -139,6 +161,14 @@ function checks(values: Check[]): Check[] {
     optionalFields(check, ["reason", "kind"]);
     context(check.context);
     if (check.comparison) measurements(check.comparison.measurements);
+    if (check.receipt !== undefined) {
+      const receipt = check.receipt;
+      const identified = typeof receipt?.id === "string" && typeof receipt.key === "string";
+      // A check that ran without a cache entry has no receipt identity; a reused result always has one.
+      ensure(object(receipt) && (receipt.disposition === "reused" ? identified :
+        receipt.disposition === "executed" && (identified || (receipt.id === null && receipt.key === null))), "Invalid saved check receipt.");
+      optionalFields(check.receipt, ["reason", "run"]);
+    }
     return { ...check, covers: check.covers || [], artifacts: check.artifacts || [], observations: observations(check.observations),
       trials: trials(check.trials), baseline: trials(check.baseline), measurements: measurements(check.measurements), problems: problems(check.problems) };
   });
@@ -251,33 +281,53 @@ function loadRun(root: string, storage: Storage, id: string) {
   }
 }
 
+function latestPointer(root: string, storage: Storage) {
+  if (storage !== "store") return { base: directory(root, `.${storage}`), path: "latest" };
+  const store = storeLocation(root);
+  return { base: store.base, path: store.latest };
+}
+
 function latestRun(root: string, runs: RunSummary[], problems: string[]) {
   for (const storage of storages) {
-    let base: string;
+    const label = `${storageLabel(storage)} latest`;
+    let pointer: { base: string; path: string };
     try {
-      base = directory(root, `.${storage}`);
-      lstatSync(join(base, "latest"));
+      pointer = latestPointer(root, storage);
+      lstatSync(join(pointer.base, pointer.path));
     } catch (error) {
       if (missing(error)) continue;
-      problems.push(`.${storage}/latest: ${message(error)}`);
+      problems.push(`${label}: ${message(error)}`);
       return null;
     }
     try {
-      const path = containedFile(base, "latest");
+      const path = containedFile(pointer.base, pointer.path);
       if (!statSync(path).isFile()) throw new Error("Latest pointer is not a regular file.");
       const id = readFileSync(path, "utf8").trim();
       if (!validId(id)) {
-        problems.push(`.${storage}/latest has an invalid run identifier.`);
+        problems.push(`${label} has an invalid run identifier.`);
         return null;
       }
-      if (!runs.some(run => run.storage === storage && run.id === id)) problems.push(`.${storage}/latest does not name an available run.`);
+      if (!runs.some(run => run.storage === storage && run.id === id)) problems.push(`${label} does not name an available run.`);
       return `${storage}:${id}`;
     } catch (error) {
-      problems.push(`.${storage}/latest: ${message(error)}`);
+      problems.push(`${label}: ${message(error)}`);
       return null;
     }
   }
   return null;
+}
+
+function savedResult(root: string, storage: Storage, id: string) {
+  try { return readFileSync(containedFile(runDirectory(root, storage, id), "result.json")); }
+  catch { return null; }
+}
+
+// A legacy run copied into the external store is hidden only when the store holds the same saved result.
+function migrated(root: string, storage: Storage, id: string, runs: RunSummary[]) {
+  if (!runs.some(run => run.storage === "store" && run.id === id)) return false;
+  const legacy = savedResult(root, storage, id);
+  const stored = savedResult(root, "store", id);
+  return Boolean(legacy && stored?.equals(legacy));
 }
 
 export function readRuns(root: string): RunsResponse {
@@ -285,11 +335,13 @@ export function readRuns(root: string): RunsResponse {
   const problems: string[] = [];
   for (const storage of storages) {
     try {
-      const base = directory(root, `.${storage}/runs`);
+      const base = runsBase(root, storage);
       for (const entry of readdirSync(base, { withFileTypes: true })) {
-        if (entry.isDirectory() || entry.isSymbolicLink()) runs.push(loadRun(root, storage, entry.name).summary);
+        if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+        if (storage !== "store" && migrated(root, storage, entry.name, runs)) continue;
+        runs.push(loadRun(root, storage, entry.name).summary);
       }
-    } catch (error) { if (!missing(error)) problems.push(`.${storage}/runs: ${message(error)}`); }
+    } catch (error) { if (!missing(error)) problems.push(`${storageLabel(storage)} runs: ${message(error)}`); }
   }
   runs.sort((a, b) => (b.startedAt || b.id).localeCompare(a.startedAt || a.id));
   return { project: { name: basename(root), root }, latest: latestRun(root, runs, problems), runs, problems };
@@ -305,13 +357,24 @@ export function readRun(root: string, storage: string, id: string): RunResponse 
   return { summary, report, files, problems };
 }
 
-function projectConfig(root: string) {
-  const path = containedFile(root, relative(root, configPath(root)).split(sep).join("/"));
-  if (!statSync(path).isFile()) throw new DataError("The project configuration is not a regular file.");
-  return loadConfig(root);
+// loadConfig validates these fields; its JavaScript inference leaves merged fragment maps untyped.
+type ConfiguredCheck = Omit<CatalogueResponse["checks"][number], "id">;
+type ProjectConfig = { checks: Record<string, ConfiguredCheck>; behaviours: Record<string, { dependsOn: string[] }> };
+
+function projectConfig(root: string): ProjectConfig {
+  const file = configPath(root);
+  try {
+    if (!statSync(containedFile(root, relative(root, file).split(sep).join("/"))).isFile()) throw new DataError("The project configuration is not a regular file.");
+  } catch (error) { if (!missing(error)) throw error; }
+  try {
+    if (!statSync(containedFile(root, ".groundwork/verify.d")).isDirectory()) throw new DataError("The configuration fragments are not a directory.");
+  } catch (error) { if (!missing(error)) throw error; }
+  return loadConfig(root) as ProjectConfig;
 }
 
 export function readCatalogue(root: string): CatalogueResponse {
+  if (!hasConfig(root)) return { behaviours: [], invariants: [], checks: [],
+    problems: ["No project verification configuration found. Run groundwork init to create one."] };
   try {
     const config = projectConfig(root);
     const rows = catalogue(config);
@@ -327,13 +390,6 @@ export function readCatalogue(root: string): CatalogueResponse {
       command: check.command, kind: check.kind, required: check.required, covers: check.covers }));
     return { behaviours, invariants, checks, problems: catalogueIssues(config, root, rows.map(row => row.id)) };
   } catch (error) {
-    if (missing(error)) {
-      try { lstatSync(configPath(root)); }
-      catch (absent) {
-        if (missing(absent)) return { behaviours: [], invariants: [], checks: [],
-          problems: ["No project verification configuration found. Run groundwork init to create one."] };
-      }
-    }
     throw new DataError(`Could not read the project catalogue: ${message(error)}`);
   }
 }

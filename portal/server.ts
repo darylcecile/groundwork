@@ -206,8 +206,10 @@ export async function startPortal(directory = portalStateDirectory(), preferredP
     owner.recordPort(server.port);
     const idle = setInterval(() => { if (portal?.idle()) shutdown(); }, 60000);
     const shutdown = () => { clearInterval(idle); portal?.close(); server?.stop(true); owner.release(); process.exit(0); };
-    process.once("SIGTERM", shutdown);
-    process.once("SIGINT", shutdown);
+    // Keep the handlers installed: competing launchers may each send SIGTERM, and a
+    // repeated signal after a one-shot handler would fall back to the default exit 143.
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
     process.once("exit", owner.release);
     return server;
   } catch (error) {

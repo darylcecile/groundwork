@@ -1,56 +1,37 @@
-# Behaviour guide
+# Project context
 
-Fill this from the real project when adopting Groundwork. Start with one journey and reuse existing tools. The installed `verify-work` skill links to the plan, configuration, and driver reference.
-
-This guide lives at `.groundwork/VERIFY.md`, linked from root `AGENTS.md`. Keep Groundwork-owned scripts and supporting configs in `.groundwork/scripts/` and `.groundwork/config/`. Commands and catalogue paths are project-root-relative; Markdown links in this guide are relative to this file.
+Use this shape for shared context in `.groundwork/guides/`, filling it from the real project during setup. The small `.groundwork/VERIFY.md` bootstrap links to that context and catalogue discovery. The installed `verify-work` skill provides the plan, configuration and driver reference.
 
 ## Run and control
 
 - Setup and start commands:
 - Required local services and starting data:
-- Entry point (URL, API, or CLI):
+- Entry point (URL, API or CLI):
 - Existing test and application-control tools:
-- Required checks:
+- Shared required checks:
 
-## Subsystem maps
+## Shared constraints
 
-Link relevant `.groundwork/maps/<area>.md` documents here using paths relative to this guide, such as `maps/<area>.md`. Use the `explore` skill to establish or refresh ownership, data flow, dependencies, constraints, change impact, and verification paths. Check the cited source before relying on an existing map. Keep journey instructions in one place and link to them; distinguish source findings from observed runtime behaviour.
+Record enduring project-wide constraints, required environments and the checks that enforce them. Shared check definitions and context belong in `.groundwork/verify.d/` fragments. Use `required: true` for checks needed on every change; active invariant checks are always included.
 
-Record source-backed direct feature dependencies in each catalogue behaviour's optional `dependsOn` list. Inspect the resulting ASCII view with `groundwork map` or `groundwork map <feature>`; it derives consumers from those links and shows the feature's source/check/guide context. Keep dependency rationale in the narrative map. Relationship metadata does not replace check bindings or alter check selection.
+Consult relevant decisions in the project's ADR location, or `.groundwork/decisions/`. Agents promote meaningful choices there before final verification, keeping status, reason, consequences and links to successor records. Link decisions from the affected guide or plan rather than keeping their only copy in temporary task notes.
 
-## Behaviours
+## Find a feature
 
-### First behaviour
+Use `groundwork view guide <query>` to find behaviours, checks and their guides. Use `groundwork map [feature]` for source-backed dependencies and consumers. Follow the catalogue's `guide` link and check cited source before relying on a map; discovery is not evidence that a behaviour passed.
 
-- Stable catalogue ID:
-- Purpose and implementation location:
-- Starting state:
-- How the user reaches it:
-- Actions:
-- Expected result:
-- Repeatable check in `.groundwork/verify.json`:
-- Evidence to capture and inspect:
-- Relevant failure or cancellation cases:
+Put new journey instructions in `.groundwork/guides/<feature>.md` or a bounded `.groundwork/maps/<area>.md`. Describe the real entry point, starting state, actions, expected outcomes, owning implementation, check and evidence to inspect. Reuse existing documentation. Keep task plans, PR summaries, run histories and artifact inventories in their own records.
 
-Map this ID in `.groundwork/verify.json` under `behaviours`, with relevant paths, its entry point, and a project-root-relative `guide` link such as `.groundwork/VERIFY.md#first-behaviour`. Link enforcing checks through `covers`. Add entries incrementally; record gaps when a behaviour has no check yet.
+Add the feature's checks and catalogue entries in `.groundwork/verify.d/<feature>.json`. Fragments are discovered automatically, with references validated across files. The entry's `guide` points to the feature document; no root index or central include list needs updating. Bind checks only to behaviours they actually assert.
 
-## Project invariants
+## Verification conventions
 
-Record actual project constraints and the checks that enforce them. Keep roles, policies, and budgets specific to this project.
+- Reuse project tools. Groundwork-owned drivers belong in `.groundwork/scripts/` and supporting tool configs in `.groundwork/config/`.
+- Commands, input paths and catalogue references are project-root-relative; Markdown links are relative to their document.
+- Plans, task notes and scratch files belong in ignored `.groundwork/plans/`, `tasks/` and `tmp/` directories.
+- Drivers write evidence to `GROUNDWORK_EVIDENCE_DIR` (`VERIFY_ARTIFACTS` also works). Generated runs and receipts live in the external state store, not in this guide.
+- Enable check `reuse` only for deterministic, input-complete checks; declare relevant ignored files and environment variables. Use `--fresh` when a new execution is needed.
+- Inspect the invocation's own run with `groundwork view report <id>`. A receipt or screenshot does not replace the observation needed for the claim.
+- Retain the local record independently of optional PR publication. `groundwork view pr [number-or-url]` reads a published account; it does not import reusable proof.
 
-- Invariant ID and description:
-- Affected paths, or why it applies globally:
-- Existing enforcing check IDs:
-- Implementation or guide reference:
-
-Declare these under `invariants` in `.groundwork/verify.json`. Active invariant checks run even for named selection. An invariant without paths is always active; without change-aware selection, all invariants are active.
-
-## Task plans and drivers
-
-Before implementation, record the task's goal and observable requirements, for example in `.groundwork/plans/task.json`. Bind requirements to checks or behaviours whose assertions establish them, then pass the plan to verification. Close every requirement with evidence or its remaining gap. Keep task notes in `.groundwork/tasks/` and scratch files in `.groundwork/tmp/`.
-
-Reuse existing drivers. Record any needed setup, cleanup, fixture, mocked-service, and workload context here. Drivers save evidence under `GROUNDWORK_EVIDENCE_DIR` (`VERIFY_ARTIFACTS` also works). Enable baseline comparison only for drivers that target `GROUNDWORK_SOURCE_DIR`.
-
-## Known verification gaps
-
-Record unavailable environments, missing check mappings, and observations still needed for these journeys. Inspect unmapped changed paths and uncovered behaviours when choosing verification; catalogue entries alone do not prove coverage.
+Project commands automatically convert older metadata into active guides and fragments, preserving useful instructions, links and check bindings. Handle setup and project-specific repairs as part of ordinary agent work.

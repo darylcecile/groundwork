@@ -48,6 +48,7 @@ jobs:
       contents: read
     outputs:
       result: ${{ steps.verify.outputs.result }}
+      verification-outcome: ${{ steps.verify.outcome }}
       artifact-url: ${{ steps.evidence.outputs.artifact-url }}
       verifier-sha: ${{ steps.verifier.outputs.commit }}
     steps:
@@ -92,6 +93,7 @@ jobs:
       - name: Upload results and evidence
         id: evidence
         if: ${{ always() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7.0.2
         with:
           name: pr-verification-${{ github.run_id }}-${{ github.run_attempt }}
@@ -108,6 +110,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      statuses: write
     steps:
       - name: Check out the reporting code
         uses: actions/checkout@v7.0.1
@@ -118,12 +121,12 @@ jobs:
           path: verifier
           persist-credentials: false
 
-      - name: Update the verification comment
+      - name: Publish the verification record
         uses: actions/github-script@v9.0.0
         env:
           RESULT_JSON: ${{ needs.verify.outputs.result }}
           ARTIFACT_URL: ${{ needs.verify.outputs.artifact-url }}
-          VERIFICATION_CONCLUSION: ${{ needs.verify.result }}
+          VERIFICATION_CONCLUSION: ${{ needs.verify.outputs.verification-outcome || needs.verify.result }}
         with:
           script: |
             const { publishComment } = await import(`${process.env.GITHUB_WORKSPACE}/verifier/pr-verification/scripts/report.mjs`);

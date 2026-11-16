@@ -1,0 +1,11 @@
+{
+  "invariants": {
+    "complete-evidence": {
+      "description": "Missing planned requirements or declared evidence cannot produce a passing verification result",
+      "checks": [
+        "tests"
+      ],
+      "guide": ".groundwork/guides/verify-a-behaviour-and-review-evidence.md#verify-a-behaviour-and-review-evidence"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "behaviours": {
+    "coverage": {
+      "description": "Account for every planned requirement using checks and retained observations",
+      "paths": [
+        "lib/model.mjs",
+        "test/runner.test.mjs"
+      ],
+      "entry": "groundwork verify --plan <file>",
+      "guide": ".groundwork/guides/plan-and-select-verification.md#plan-and-select-verification"
+    }
+  }
+}

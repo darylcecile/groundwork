@@ -17,15 +17,19 @@ Carry out the requested work as described by the user. Make sure to follow the p
 
 If the user has provided an issue or reference, make sure to review it thoroughly to understand the context, requirements, and any constraints before starting the implementation. If the provided source is ambiguous or incomplete, seek clarification from the user before proceeding.
 
-For a nontrivial change, use the `explore` skill before deciding the implementation scope and approach. Reuse a relevant exploration from this task when it is still current. Carry its entry points, owning modules, data flow, constraints, affected callers, verification options, and unresolved questions into the task context and any delegated brief. Existing `.groundwork/maps/` documents help navigate; confirm the relevant claims against current source before relying on them.
+For a nontrivial change, use the `explore` skill before deciding the implementation scope and approach. Reuse a relevant exploration from this task when it is still current. Carry its entry points, owning modules, data flow, constraints, affected callers, verification options, and unresolved questions into the task context and any delegated brief. Consult relevant decisions in the project's existing ADR location, or `.groundwork/decisions/`. Existing `.groundwork/maps/` documents help navigate; confirm the relevant claims against current source before relying on them.
 
-Load and use `verify-work` for every implementation task, reading the project's `.groundwork/VERIFY.md` and `.groundwork/verify.json` when present. Before executing a known deterministic multi-step browser, device, API, or CLI verification, reuse an existing driver/test or write the smallest script—even for the first run. Use bounded interactive discovery only until the target and flow are known; then batch the known steps, returning to the model only for decisions, failure diagnosis, or evidence review. Do not execute a known journey one action per tool turn.
+Load and use `verify-work` for every implementation task. Read the project's `.groundwork/VERIFY.md` bootstrap and use `groundwork view guide` with the merged `.groundwork/verify.d/*.json` catalogue to find relevant context, guides, maps and checks. Own missing setup and normal metadata migration as part of the task: project commands convert older metadata automatically; use `groundwork init` when setup is missing and resolve project-specific repairs from repository context. Before executing a known deterministic multi-step browser, device, API, or CLI verification, reuse an existing driver/test or write the smallest script—even for the first run. Use bounded interactive discovery only until the target and flow are known; then batch the known steps, returning to the model only for decisions, failure diagnosis, or evidence review. Do not execute a known journey one action per tool turn.
 
-Preserve real assertions, condition-based waits, and sequential stateful order in the driver; batching does not mean parallel actions against the same browser or device session. Reuse the project runner. Put new reusable journey drivers in `.groundwork/scripts/` and register them in the existing active verification configuration, including legacy root `verify.json`. If none exists, invoke the existing runner or script directly. A tiny one-off may use a single batched tool invocation without adding a framework or integration suite. Keep per-action narration and successful step logs out of model context: retain full diagnostic logs and artifacts, surface concise outcomes, failed assertions, and evidence paths, and inspect the evidence before claiming success.
+Preserve real assertions, condition-based waits, and sequential stateful order in the driver; batching does not mean parallel actions against the same browser or device session. Reuse the project runner. Put new reusable journey drivers in `.groundwork/scripts/` and feature checks in `.groundwork/verify.d/<feature>.json`, preserving existing bindings through conversion. A tiny one-off may use a single batched tool invocation without adding a framework or integration suite. Keep per-action narration and successful step logs out of model context: retain full diagnostic logs and artifacts, surface concise outcomes, failed assertions, and evidence paths, and inspect the evidence before claiming success.
 
-Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track any progress, decisions, and context. Prioritising tasks helps both the agent and the user to focus on the most important work first. Never have multiple tasks with the same priority. As you complete a task, delete the corresponding file.
+Create a `.groundwork/tasks/<priority>-<name>.md` file to document the ask and track progress, decision links, and context. Priorities must be unique. These are temporary working notes; promote meaningful durable decisions before final verification and delete the notes only after their lasting context has a home.
 
-Keep Groundwork-owned project files inside `.groundwork/`: reusable helpers in `scripts/`, supporting tool configs in `config/`, plans in `plans/`, and scratch files in `tmp/`. Reuse existing project tools. Keep root `AGENTS.md` as the discoverable entry point to `.groundwork/VERIFY.md` and `.groundwork/verify.json`; use a tool's required discovery path when it cannot load an explicitly located config. Run commands from the project root and pass helper/config paths explicitly. Commit reusable files; keep task notes, plans, scratch files and run evidence ignored through `.groundwork/.gitignore`.
+Use the project's existing ADR location, falling back to `.groundwork/decisions/<topic>.md`. Keep one bounded file per meaningful decision with its status, reason and consequences. Consult related records before choosing an approach; link them from the task and relevant guides, maps or verification plan. Preserve superseded records and link their successors instead of erasing history. Handle this as ordinary agent work, without a central index or asking users to maintain records for trivial choices.
+
+Keep authored Groundwork project files inside `.groundwork/`: project context and bounded journeys in `guides/`, subsystem explanations in `maps/`, configuration in `verify.d/`, reusable helpers in `scripts/`, supporting tool configs in `config/`, plans in `plans/` and scratch files in `tmp/`. Keep `.groundwork/VERIFY.md` as a small bootstrap; a feature needs no central include list or root index edit. Preserve authored instructions and links through conversion into active guides. Keep task/run/PR history in its own records. Root `AGENTS.md` remains the discoverable workflow entry point. Run commands from the project root and pass helper/config paths explicitly. Commit reusable files; ignore task notes, plans and scratch files. Generated runs and receipts use the external evidence store.
+
+Submit checks and any saved plan in one verification run. Plans schedule bound checks and behaviour checks alongside required and invariant checks. Reuse receipts only for opted-in deterministic checks with complete declared inputs; use `--fresh` when a new execution is needed. A requirement marked `review: true` also needs an evidence-backed review observation. Retain the invocation's own local record and run ID regardless of PR publication, and inspect its evidence; a saved receipt or published summary does not replace actual visual or runtime observation when the claim requires it. For tasks including PR delivery, follow `verify-work` to publish the record as part of delivery under existing permissions and approval rules.
 
 As you form an understanding of the task, continuously update the task files with your findings, decisions, and any clarifications obtained from the user. This ensures that all relevant information is captured and can be referenced throughout the implementation process, even if a context compacting occurs.
 
@@ -44,17 +48,20 @@ The task documentation should be structured in the following manner:
 ## Context and References
 - <links to issues, references, or relevant documentation>
 
-## Decisions (ADRs, Product Requirements, and Decisions)
-- <notes on progress, decisions made, and rationale>
+## Decisions
+- Relevant durable records: <links in the project's ADR location or .groundwork/decisions/>
+- Working choices: <unresolved choices and rationale; promote meaningful decisions before final verification>
 
 ## Definition of Done
 - <criteria that must be met for the task to be considered complete>
 
 ## Implementation Checklist
 - <list of items to complete>
+- [ ] Promote meaningful durable decisions and link them from the plan or relevant guidance
 
 ## Verification Checklist
 - <list of items to verify the implementation>
+- [ ] Retain the local run record, outcomes and remaining gaps before deleting these notes
 
 ```
 
@@ -82,6 +89,7 @@ Additionally, regularly review the decisions and context sections to ensure that
   - Include the journey's starting state, expected assertions, and existing checks in the brief; require the completion report to provide the exact reproducible check command and saved evidence paths.
 - Follow the implementation checklist to complete the task.
 - Refresh affected existing maps and their guide/catalogue links as part of the change. Use `explore` to retrace a changed flow when needed; distinguish source findings from runtime observations.
+- Promote meaningful durable decisions and link their records before the final verification run.
 - Once the implementation checklist is complete, run its scripted verification through `groundwork verify ...` (or the existing project runner if no Groundwork configuration exists), then inspect the observations and evidence. Address relevant failures and keep the task file current until verified.
 - When a subagent reports a task as completed, spawn a new judge subagent (based on task judge model specified) to evaluate the implementation and ensure it meets the defined criteria.
   - Judge agents can give feedback and request revisions (which should be outlined in the task file).
@@ -95,7 +103,7 @@ Additionally, regularly review the decisions and context sections to ensure that
     - Adherence to the defined requirements - as specified in the task file.
     - Overall quality, including readability, maintainability, and efficiency.
     - Identification of any slop or unnecessary complexity - based on `dmmulroy/anti-slop` guidelines.
-- Delete the task file once the task is fully completed and verified; and the task meets definition of done. 
+- Delete the task file once the task meets its definition of done, the verification record is retained, and lasting decisions are linked from durable records.
 - Once all tasks are completed and verified - with evidence documented with groundwork, delete the folder `.groundwork/tasks/` when empty.
 
 ## Remember

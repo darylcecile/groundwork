@@ -29,7 +29,7 @@ export function fileURL(run: RunSummary, path: string, revision?: number | strin
 export function readHash() {
   try {
     const key = decodeURIComponent(location.hash.slice(1));
-    return /^(groundwork|verify):.+$/.test(key) ? key : null;
+    return /^(store|groundwork|verify):.+$/.test(key) ? key : null;
   } catch { return null; }
 }
 

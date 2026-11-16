@@ -1,4 +1,4 @@
-export type Storage = "groundwork" | "verify";
+export type Storage = "store" | "groundwork" | "verify";
 export type Status = "passed" | "failed" | "inconclusive";
 
 export interface Artifact { path: string; sha256?: string }
@@ -76,7 +76,10 @@ export interface Check {
   trialSummary?: Counts;
   comparison?: { status: string; reason: string; measurements: Measurement[] } | null;
   context?: Record<string, unknown>;
+  receipt?: Receipt;
 }
+export type Receipt = ({ id: string; key: string; disposition: "executed" | "reused" } | { id: null; key: null; disposition: "executed" }) &
+  { reason?: string | null; run?: string | null };
 export interface Coverage {
   id: string;
   expect: string;

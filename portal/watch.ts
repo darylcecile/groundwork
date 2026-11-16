@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync, realpathSync, watch, type FSWatcher } from "node:fs";
 import { join, sep } from "node:path";
+import { evidenceStore } from "../lib/store.mjs";
 
 function stamp(path: string) {
   try {
@@ -34,18 +35,26 @@ export function watchProject(root: string, intervalMs = 1500) {
   };
   let legacyConfig = stamp(join(root, "verify.json"));
   let wasAvailable: boolean | undefined;
+  let store: string | null | undefined;
   const update = () => {
     let available = false;
     try { available = realpathSync(root) === root; } catch { /* The project may have been removed. */ }
-    if (wasAvailable !== undefined && wasAvailable !== available) change();
+    if (wasAvailable !== undefined && wasAvailable !== available) { change(); store = undefined; }
     wasAvailable = available;
     if (!available) {
       for (const entry of watched.values()) entry.watcher?.close();
       watched.clear();
       return;
     }
-    for (const name of [".groundwork", ".verify"]) {
-      const path = join(root, name);
+    // Resolving the store runs Git, so do it once per availability instead of on every poll.
+    if (store === undefined) {
+      try { store = evidenceStore(root).directory; } catch { store = null; }
+    }
+    const paths = [join(root, ".groundwork"), join(root, ".verify"), ...(store ? [store] : [])];
+    for (const [path, entry] of watched) {
+      if (!paths.includes(path)) { entry.watcher?.close(); watched.delete(path); change(); }
+    }
+    for (const path of paths) {
       let identity = "missing";
       try {
         const info = lstatSync(path);

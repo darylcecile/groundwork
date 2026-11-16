@@ -63,6 +63,7 @@ function CheckDetail({ check, onOpen }: { check: Check; onOpen: OpenFile }) {
   return <div className="check-detail">
     <div className="detail-group"><h3 className="detail-label">Expected</h3><p className="detail-copy">{check.expect}</p></div>
     {check.reason && <div className="detail-group"><h3 className="detail-label">Saved result</h3><p className="detail-copy">{check.reason}</p></div>}
+    {check.receipt?.disposition === "reused" && <div className="detail-group"><h3 className="detail-label">Reused result</h3><p className="detail-copy">{check.receipt.reason || "This check was not run again; its result was reused from an earlier run."}{check.receipt.run && ` From run ${check.receipt.run}.`}</p></div>}
     {check.command && <pre className="command">{check.command}</pre>}
     <div className="check-info"><span>{check.exitCode === null ? "No exit code recorded" : `Exit code ${check.exitCode}`}</span>{check.kind && <span><span className="capitalize">{check.kind === "api" ? "API" : check.kind === "ui" ? "UI" : check.kind}</span> check</span>}{!!check.covers.length && <span>Covers {check.covers.join(", ")}</span>}</div>
     <FileLinks paths={[...(check.log ? [check.log] : []), ...check.artifacts.map(file => file.path)]} onOpen={onOpen} />

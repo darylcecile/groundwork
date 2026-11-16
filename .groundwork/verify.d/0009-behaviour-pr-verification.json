@@ -1,0 +1,17 @@
+{
+  "behaviours": {
+    "pr-verification": {
+      "description": "Verify a PR against a frozen plan and report results in the importing repository",
+      "paths": [
+        "pr-verification/**",
+        ".github/workflows/verify.yml"
+      ],
+      "guide": ".groundwork/guides/final-pr-verification.md#final-pr-verification",
+      "dependsOn": [
+        "catalogue",
+        "coverage",
+        "drivers"
+      ]
+    }
+  }
+}
