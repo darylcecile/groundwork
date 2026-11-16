@@ -36,6 +36,26 @@ test("review obligations survive frozen-plan persistence and invariant augmentat
   }
 });
 
+test("decision documentation references survive persistence and invariants without adding coverage", () => {
+  const input = { goal: "Document the chosen design", requirements: [{ id: "works", expect: "The editor works", checks: ["editor"] }],
+    decisions: [".groundwork/decisions/editor.md", "docs/design.MD"] };
+  const frozen = validatePlan(input);
+  input.decisions.push("docs/other.md");
+  const saved = validatePlan(JSON.parse(JSON.stringify(frozen)));
+  const augmented = withInvariants(saved, { invariants: {
+    integrity: { description: "Stored data remains valid", checks: ["storage"] },
+  } }, ["integrity"]);
+  expect(augmented.decisions).toEqual([".groundwork/decisions/editor.md", "docs/design.MD"]);
+  expect(() => augmented.decisions.push("docs/other.md")).toThrow();
+  expect(assess({ plan: saved, checks: [check()] }).coverage).toHaveLength(1);
+  expect(assess({ plan: saved, checks: [check()] }).status).toBe("passed");
+  expect(validatePlan({ goal: input.goal, requirements: input.requirements })).not.toHaveProperty("decisions");
+  for (const decisions of ["docs/design.md", null, ["../design.md"], ["/design.md"], ["docs/../design.md"],
+    ["https://example.test/design.md"], ["docs/design.md#choice"], ["docs/design.md?raw=1"], ["docs\\design.md"], ["docs/design.txt"], ["docs/\u0000design.md"]]) {
+    expect(() => validatePlan({ ...input, decisions })).toThrow("Plan decisions must be project-relative Markdown");
+  }
+});
+
 test("passing automation needs evidence-backed review explicitly covering the requirement", () => {
   for (const recorded of [[], observations({ kind: "assertion" }), observations({ covers: ["unrelated"] }),
     observations({ covers: ["editing"] }), observations({ evidence: ["missing.md"] })]) {

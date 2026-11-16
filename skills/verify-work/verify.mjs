@@ -8,14 +8,15 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { catalogue, catalogueIssues, hasConfig, loadConfig, selectChecks } from "../../lib/config.mjs";
 import { installSkills, updatePackage } from "../../lib/distribution.mjs";
+import { githubAPI, resolvePullRequest } from "../../lib/github.mjs";
 import { renderMap } from "../../lib/map.mjs";
 import { prepareProject } from "../../lib/migration.mjs";
 import { ensurePortal } from "../../lib/portal.mjs";
-import { assess, ensure, exitCode, object, readJSON, refreshEvidence, text, validateAssessment,
-  validateCheck, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
-import { changedFiles, pendingCheck, runChecks, source } from "../../lib/runner.mjs";
-import { receiptRecipe } from "../../lib/receipts.mjs";
-import { prepareEvidenceStore } from "../../lib/store.mjs";
+import { listRecords, publishRecord } from "../../lib/pr-records.mjs";
+import { assess, ensure, exitCode, readJSON, text, validatePlan, withInvariants, writeJSON } from "../../lib/model.mjs";
+import { makeRecord, reassessRun, renderRecord, validateLocalRun } from "../../lib/report.mjs";
+import { changedFiles, git, pendingCheck, runChecks, source, sourceMatches } from "../../lib/runner.mjs";
+import { evidenceStore, prepareEvidenceStore } from "../../lib/store.mjs";
 
 const skillDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(skillDirectory, "../..");
@@ -32,6 +33,9 @@ const help = `groundwork — checks and evidence
     --base <ref>                   Compare source-aware drivers with a baseline
     --fresh                        Execute checks instead of reusing saved receipts
   groundwork view report [id]     Show results, coverage, measurements, and evidence
+  groundwork publish pr [number-or-url] --run <id>
+                                   Publish a saved run to a PR, defaulting to the current branch
+  groundwork view pr [number-or-url]  Read published verification history for a PR
   groundwork view guide [query]   Find behaviours, invariants, and their checks
   groundwork map [feature]        Show recorded feature dependencies and pointers
 
@@ -88,16 +92,94 @@ function projectRoot() {
   throw new Error("No Groundwork project metadata found. The agent can prepare this project with groundwork init.");
 }
 
-function validateReport(value, id) {
-  ensure(object(value) && [1, 2].includes(value.version) && value.id === id && text(value.startedAt) &&
-    (value.finishedAt === null || text(value.finishedAt)) && object(value.source) &&
-    (value.source.revision === null || text(value.source.revision)) &&
-    /^[a-f0-9]{64}$/.test(value.source.fingerprint) && typeof value.source.dirty === "boolean" &&
-    Array.isArray(value.omitted) && value.omitted.every(text) && Array.isArray(value.checks) &&
-    value.checks.length > 0, "Invalid saved verification report.");
-  for (const check of value.checks) validateCheck(check);
-  if (value.version === 2) validateAssessment(value);
-  return value;
+function localRecord(result) {
+  const assessment = assess(result);
+  return makeRecord({ run: {
+    kind: "local", id: result.id, startedAt: result.startedAt, finishedAt: result.finishedAt,
+    source: result.source, selection: result.selection || null, omitted: result.omitted,
+    context: result.context || {}, runner: result.runner || null, projectPath: result.projectPath || "",
+  }, assessment, status: result.status || assessment.status });
+}
+
+function publicationOptions(args) {
+  let reference;
+  let id;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "--run") {
+      ensure(!id && text(args[index + 1]) && /^[a-zA-Z0-9_-]+$/.test(args[index + 1]), "--run needs one run identifier.");
+      id = args[++index];
+    } else {
+      ensure(!arg.startsWith("-") && reference === undefined, "Use groundwork publish pr [number-or-url] --run <id>.");
+      reference = arg;
+    }
+  }
+  ensure(id, "Publishing requires an explicit --run <id>; use the run ID from groundwork verify.");
+  return { reference, id };
+}
+
+function decisionLinks(target, record, revision) {
+  return Object.fromEntries((record.plan?.decisions || []).map(path => [path,
+    `https://${target.host}/${target.owner}/${target.repo}/blob/${encodeURIComponent(revision)}/${[record.run.projectPath, path]
+      .filter(Boolean).join("/").split("/").map(encodeURIComponent).join("/")}`]));
+}
+
+async function publishPR(root, { reference, id }) {
+  const directory = join(evidenceStore(root).runs, id);
+  const result = validateLocalRun(readJSON(join(directory, "result.json")), id);
+  const record = localRecord(result);
+  const config = loadConfig(root);
+  const current = reassessRun({ root, directory, source: result.source, finishedAt: result.finishedAt,
+    assessment: result, config });
+  const target = resolvePullRequest(reference, { cwd: root });
+  const matches = sourceMatches(result.source, current.currentSource) && !current.currentSource.dirty &&
+    current.currentSource.revision === target.headSha;
+  const published = await publishRecord({ api: githubAPI(target, { cwd: root }), target, record,
+    assessment: current.assessment, status: current.assessment.status, sourceMatches: matches,
+    links: { decisions: decisionLinks(target, record, target.headSha) } });
+  if (published.skipped) {
+    console.log(`INCONCLUSIVE — ${published.skipped}`);
+    return 2;
+  }
+  console.log(`${published.publication.status.toUpperCase()} — published run ${id} to ${target.url}`);
+  console.log(`Record (${published.transport}): ${published.url}`);
+  for (const problem of published.publication.assessment.problems) console.log(`  ${problem}`);
+  if (published.superseded) console.log("A newer verification attempt determines the PR commit status.");
+  return exitCode(published.publication.status);
+}
+
+async function viewPR(reference) {
+  const target = resolvePullRequest(reference);
+  const { pull, records, diagnostics, commitStatus } = await listRecords({ api: githubAPI(target), target });
+  const latest = records.find(item => item.current);
+  let status = latest?.status || "inconclusive";
+  if (latest && commitStatus && commitStatus.state !== "success") status = commitStatus.state === "failure" ? "failed" : "inconclusive";
+  console.log(`PR: ${pull.html_url || target.url}\nCurrent PR head: ${pull.head.sha}`);
+  if (commitStatus) console.log(`Latest publication status: ${commitStatus.state.toUpperCase()}${commitStatus.description ? ` — ${commitStatus.description}` : ""}`);
+  console.log(latest ? `${status.toUpperCase()} — latest published attempt for this PR head: ${latest.record.run.id}`
+    : "INCONCLUSIVE — No published verification record for the current PR head.");
+  for (const diagnostic of diagnostics) console.log(`  ${diagnostic}`);
+  if (records.length) console.log("\nPublished verification history:");
+  for (const item of records) {
+    const { record, publication } = item;
+    console.log(`\n${item.current ? "CURRENT PR HEAD" : "HISTORICAL"} · ${item.status.toUpperCase()} · ${record.run.id} · ${record.run.startedAt || "time unavailable"}`);
+    console.log(`  Tested revision: ${record.run.testedSha || record.run.source?.revision || "no commit recorded"}${record.run.source?.dirty ? " + local changes" : ""}`);
+    console.log(`  Publication head: ${publication?.headSha || "not recorded"}`);
+    console.log(`  Record: ${item.source.url}`);
+    for (const check of record.checks) {
+      console.log(`  ${check.status.toUpperCase()} ${check.name}: ${check.expect}`);
+      if (check.receipt) console.log(`    ${check.receipt.disposition.toUpperCase()}: ${check.receipt.reason}${check.receipt.run ? ` (run ${check.receipt.run})` : ""}`);
+    }
+    if (record.plan) console.log(`  Goal: ${record.plan.goal}`);
+    for (const coverage of publication?.assessment?.coverage || record.coverage) {
+      console.log(`  ${coverage.status.toUpperCase()} ${coverage.id}: ${coverage.expect}${coverage.reason ? ` — ${coverage.reason}` : ""}`);
+    }
+    for (const gap of new Set([...record.gaps, ...(publication?.assessment?.problems || []), ...item.diagnostics])) console.log(`  Gap: ${gap}`);
+    for (const [path, url] of Object.entries(decisionLinks(target, record, publication?.headSha || pull.head.sha))) {
+      console.log(`  Decision: ${path} — ${url}`);
+    }
+  }
+  return exitCode(status);
 }
 
 function report(root, requestedId) {
@@ -105,29 +187,9 @@ function report(root, requestedId) {
   const id = requestedId || readFileSync(storage.latest, "utf8").trim();
   ensure(/^[a-zA-Z0-9_-]+$/.test(id), "Invalid run identifier.");
   const directory = join(storage.runs, id);
-  const result = validateReport(readJSON(join(directory, "result.json")), id);
-  const issues = [...(result.problems || [])];
-  if (!result.finishedAt) issues.push("The selected run did not finish.");
-  const current = source(root);
-  if (!result.source.identityVersion || result.source.identityVersion !== current.identityVersion) {
-    issues.push("Historical source identity; this run is inapplicable to current content matching. Verify the affected behaviour again.");
-  } else if (current.fingerprint !== result.source.fingerprint) issues.push("Source changed since this run; verify the affected behaviour again.");
-  const receipts = result.checks.filter(check => text(check.receipt?.key));
-  if (receipts.length) {
-    try {
-      const config = loadConfig(root);
-      const context = { ...config.context, runnerPlatform: process.platform, runnerArchitecture: process.arch };
-      for (const check of receipts) {
-        ensure(Object.hasOwn(config.checks, check.name), `The current recipe for ${check.name} is unavailable.`);
-        const recipe = receiptRecipe({ root, name: check.name, check: config.checks[check.name], source: current,
-          context, plan: result.plan || null, env: process.env });
-        ensure(recipe.key === check.receipt.key, `Receipt inputs changed for ${check.name}; verify the affected behaviour again.`);
-      }
-    } catch (error) { issues.push(`Saved receipt is inapplicable: ${error.message}`); }
-  }
-  const retained = refreshEvidence(directory, result.checks, result.observations || []);
-  issues.push(...retained.problems);
-  const evaluated = assess({ plan: result.plan || null, ...retained, problems: issues, context: result.context || {} });
+  const result = validateLocalRun(readJSON(join(directory, "result.json")), id);
+  const { assessment: evaluated, problems: issues } = reassessRun({ root, directory, source: result.source,
+    finishedAt: result.finishedAt, assessment: result });
   const { status } = evaluated;
   console.log(`\n${status.toUpperCase()} — checks from ${result.startedAt}`);
   console.log(`Run: ${id}`);
@@ -154,6 +216,7 @@ function report(root, requestedId) {
   if (result.selection?.uncoveredBehaviours?.length) console.log(`Behaviours without mapped checks: ${result.selection.uncoveredBehaviours.join(", ")}`);
   if (result.omitted.length) console.log(`Not selected: ${result.omitted.join(", ")}`);
   console.log(`Report: ${relative(root, join(directory, "result.json"))}`);
+  if (existsSync(join(directory, "report.md"))) console.log(`Record: ${relative(root, join(directory, "report.md"))}`);
   return exitCode(status);
 }
 
@@ -211,7 +274,10 @@ async function run(root, requested, planInput) {
   const id = `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}`;
   const storage = prepareEvidenceStore(root);
   const result = {
-    version: 2, id, startedAt: new Date().toISOString(), finishedAt: null, source: source(root),
+    version: 2, id, kind: "local", startedAt: new Date().toISOString(), finishedAt: null, source: source(root),
+    projectPath: relative(git(root, ["rev-parse", "--show-toplevel"]).toString().trim(), root).split(sep).join("/"),
+    runner: { runtime: process.versions.bun ? "bun" : "node", version: process.versions.bun || process.version,
+      platform: process.platform, architecture: process.arch },
     selection, omitted: selection.omitted,
     ...assess({ plan, checks: selection.names.map(name => pendingCheck(name, config.checks[name])), problems: catalogueIssues(config, root, ids),
       context: { ...config.context, runnerPlatform: process.platform, runnerArchitecture: process.arch } }),
@@ -223,6 +289,7 @@ async function run(root, requested, planInput) {
     Object.assign(result, assess(result));
     if (!result.finishedAt && result.status === "passed") result.status = "inconclusive";
     writeJSON(path, result);
+    writeFileSync(join(directory, "report.md"), renderRecord(localRecord(result)));
   };
   save();
   writeFileSync(storage.latest, `${id}\n`);
@@ -248,8 +315,18 @@ async function run(root, requested, planInput) {
   return report(root, id);
 }
 
-try {
+async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (command === "view" && args[0] === "pr") {
+    ensure(args.length <= 2, "Use groundwork view pr [number-or-url].");
+    process.exitCode = await viewPR(args[1]);
+    return;
+  }
+  if (command === "publish" && args[0] === "pr") {
+    const requested = publicationOptions(args.slice(1));
+    process.exitCode = await publishPR(projectRoot(), requested);
+    return;
+  }
   const requested = command === "verify" ? options(args) : null;
   const planInput = requested?.plan ? readJSON(resolve(requested.plan)) : null;
   let portalRoot = process.cwd();
@@ -280,7 +357,9 @@ try {
   } else {
     throw new Error(`Unknown command or arguments.\n${help}`);
   }
-} catch (error) {
+}
+
+try { await main(); } catch (error) {
   console.error(`INCONCLUSIVE — ${error.message}`);
   process.exitCode = 2;
 }

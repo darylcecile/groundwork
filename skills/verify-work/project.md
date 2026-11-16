@@ -14,6 +14,8 @@ Use this shape for shared context in `.groundwork/guides/`, filling it from the 
 
 Record enduring project-wide constraints, required environments and the checks that enforce them. Shared check definitions and context belong in `.groundwork/verify.d/` fragments. Use `required: true` for checks needed on every change; active invariant checks are always included.
 
+Consult relevant decisions in the project's ADR location, or `.groundwork/decisions/`. Agents promote meaningful choices there before final verification, keeping status, reason, consequences and links to successor records. Link decisions from the affected guide or plan rather than keeping their only copy in temporary task notes.
+
 ## Find a feature
 
 Use `groundwork view guide <query>` to find behaviours, checks and their guides. Use `groundwork map [feature]` for source-backed dependencies and consumers. Follow the catalogue's `guide` link and check cited source before relying on a map; discovery is not evidence that a behaviour passed.
@@ -30,5 +32,6 @@ Add the feature's checks and catalogue entries in `.groundwork/verify.d/<feature
 - Drivers write evidence to `GROUNDWORK_EVIDENCE_DIR` (`VERIFY_ARTIFACTS` also works). Generated runs and receipts live in the external state store, not in this guide.
 - Enable check `reuse` only for deterministic, input-complete checks; declare relevant ignored files and environment variables. Use `--fresh` when a new execution is needed.
 - Inspect the invocation's own run with `groundwork view report <id>`. A receipt or screenshot does not replace the observation needed for the claim.
+- Retain the local record independently of optional PR publication. `groundwork view pr [number-or-url]` reads a published account; it does not import reusable proof.
 
 Project commands automatically convert older metadata into active guides and fragments, preserving useful instructions, links and check bindings. Handle setup and project-specific repairs as part of ordinary agent work.

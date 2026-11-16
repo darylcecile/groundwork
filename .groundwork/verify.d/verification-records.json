@@ -1,0 +1,27 @@
+{
+  "behaviours": {
+    "verification-records": {
+      "description": "Keep local verification records and explicitly publish or read source-bound PR history",
+      "paths": [
+        "lib/report.mjs",
+        "lib/pr-records.mjs",
+        "lib/github.mjs",
+        "skills/verify-work/verify.mjs",
+        "pr-verification/scripts/verify.mjs",
+        "pr-verification/scripts/report.mjs",
+        ".github/workflows/verify.yml",
+        "test/report.test.mjs",
+        "test/pr-records.test.mjs",
+        "test/verify.test.mjs",
+        "test/package.test.mjs",
+        "pr-verification/test/verification.test.mjs"
+      ],
+      "entry": "groundwork verify / groundwork publish pr --run <id> / groundwork view pr",
+      "guide": ".groundwork/guides/verification-records.md#verification-records",
+      "dependsOn": [
+        "coverage",
+        "drivers"
+      ]
+    }
+  }
+}

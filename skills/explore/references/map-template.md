@@ -13,6 +13,7 @@ Use this shape for a bounded area under `.groundwork/maps/<area>.md`. Adapt head
 - Inspected: <date>; revision: <commit, or state that the source is unversioned>.
 - Relevant working-tree changes: <paths and changes affecting this map, or none>.
 - Source basis: <key repository-relative paths plus symbols/headings and links>.
+- Relevant decisions: <links in the project's ADR location or .groundwork/decisions/, when applicable>.
 - Evidence limits: <which claims come from source; any unavailable runtime context>.
 
 ## Behaviour and entrypoints
@@ -63,7 +64,9 @@ A check's presence does not say it ran or passed.>
 ## Documented rationale
 
 <Only when useful: link the decision record, PR, or commit and explain what it
-explicitly documents. Note current divergence. Label interpretation as inference.>
+explicitly documents. Consult accepted decisions and any successors; keep durable
+rationale in its decision record rather than copying task notes here. Note current
+divergence. Label interpretation as inference.>
 
 ## Unknowns and refresh triggers
 

@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatComment, marker, publishComment, validateResult, verdict } from "../scripts/report.mjs";
+import { formatComment, publishComment, validateResult, verdict } from "../scripts/report.mjs";
+import { parseRecord } from "../../lib/report.mjs";
 import { evidenceStore } from "../../lib/store.mjs";
 import { refreshEvidence } from "../../lib/model.mjs";
 import { catalogueIssues, loadConfig } from "../../lib/config.mjs";
@@ -72,10 +73,10 @@ if (mode === "commit") spawnSync("git", ["-c", "user.name=Verification Test", "-
 if (mode === "mutate-plan") writeFileSync(join(output, "plan.json"), JSON.stringify({goal: "Verify only one item", requirements: [{id: "behaviour", expect: "The requested behaviour works"}]}));
 mkdirSync(join(output, "agent"), { recursive: true });
 if (mode !== "missing-evidence") writeFileSync(join(output, "agent", "observation.txt"), "Observed the configured behaviour");
-const evidence = mode === "self-report" ? ["agent.json"] : ["agent/observation.txt"];
+const evidence = mode === "self-report" ? ["agent.json"] : mode === "saved-report" ? ["report.md"] : ["agent/observation.txt"];
 writeFileSync(join(output, "agent.json"), JSON.stringify({
   summary: "Observed the requested behaviour.",
-  checks: [{ claim: "The requested behaviour works", covers: ["behaviour"], kind: mode === "unspecified-kind" ? undefined : mode === "review" ? "review" : "assertion", status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
+  checks: [{ claim: "The requested behaviour works", covers: ["behaviour"], kind: mode === "unspecified-kind" ? undefined : ["review", "saved-report"].includes(mode) ? "review" : "assertion", status: mode === "failed" ? "failed" : "passed", observed: "Ran the project's entry point and inspected its output.", evidence }],
   gaps: mode === "gap" ? ["The required browser is unavailable"] : []
 }));
 `);
@@ -112,6 +113,11 @@ test.each(["direct", "symlink"])("runs checks and the agent from a %s repository
   expect(result.code).toBe(0);
   expect(result.report.status).toBe("passed");
   expect(result.report.repository).toBe("consumer/project");
+  const saved = parseRecord(readFileSync(join(value.output, "report.md"), "utf8"));
+  expect(saved.record.status).toBe("passed");
+  expect(saved.record.run.id).toBe(result.report.id);
+  expect(saved.record.run.source).toEqual(result.report.source);
+  expect(saved.record.coverage).toEqual(result.report.verification.coverage);
   expect(existsSync(join(value.output, "project/test-results/response.json"))).toBe(true);
   expect(JSON.parse(readFileSync(join(value.output, "project/test-results/response.json"), "utf8"))).toEqual({ ok: true });
   expect(readFileSync(join(value.output, "checks.log"), "utf8")).toContain("Checks observed success");
@@ -125,6 +131,9 @@ test("failed configured checks remain failures after positive agent observations
   expect(result.code).toBe(1);
   expect(result.report.status).toBe("failed");
   expect(result.report.agent.checks[0].status).toBe("passed");
+  const saved = parseRecord(readFileSync(join(value.output, "report.md"), "utf8"));
+  expect(saved.record.status).toBe("failed");
+  expect(saved.record.checks.some(check => check.status === "failed")).toBe(true);
   expect(readFileSync(join(value.output, "checks.log"), "utf8")).toContain("Observed failure");
 });
 
@@ -220,6 +229,11 @@ console.log("Nested project driver passed");\n`);
   const report = JSON.parse(readFileSync(join(runs, id, "result.json"), "utf8"));
   expect(report.status).toBe("passed");
   expect(report.problems).toEqual([]);
+  const saved = parseRecord(readFileSync(join(runs, id, "report.md"), "utf8"));
+  expect(saved.record.run.id).toBe(id);
+  expect(saved.record.run.source).toEqual(report.source);
+  expect(saved.record.run.projectPath).toBe("packages/app");
+  expect(saved.record.checks[0].command).toBe("bun .groundwork/scripts/check.mjs");
   expect(readFileSync(join(runs, id, "feature/output.log"), "utf8")).toContain("Nested project driver passed");
   expect(existsSync(value.output)).toBe(false);
   expect(existsSync(join(project, ".groundwork/runs"))).toBe(false);
@@ -251,7 +265,7 @@ test("completed automated requirements skip the verification agent without requi
   expect(result.report.agent.gaps).toEqual([]);
   expect(verdict(validateResult(result.report))).toBe("passed");
   const comment = formatComment(result.report, { artifactUrl: "https://example.test/evidence", runUrl: "https://example.test/run", conclusion: "success" });
-  expect(comment).toContain("Final verification — Passed");
+  expect(comment).toContain("Verification — Passed");
   expect(comment).toContain("no further agent verification is required");
   const unavailable = structuredClone(result.report);
   delete unavailable.agent.execution.skipped;
@@ -328,6 +342,22 @@ test.each(["assertion", "review", "unspecified-kind"])("required review invokes 
   const context = JSON.parse(readFileSync(join(value.output, "context.json"), "utf8"));
   expect(context.frontier.missing.map(item => item.id)).toEqual(["behaviour"]);
   expect(context.verification.checks[0].status).toBe("passed");
+});
+
+test("the generated run report cannot supply its own required review evidence or retain a proof hash", () => {
+  const value = fixture("saved-report");
+  write(join(value.project, ".groundwork/plans/pr.json"), JSON.stringify({ goal: "Review the requested behaviour", requirements: [
+    { id: "behaviour", expect: "The requested behaviour fits the design", review: true },
+  ] }));
+  const result = run(value, { PR_VERIFY_PLAN: ".groundwork/plans/pr.json" });
+  expect(result.code).toBe(2);
+  expect(result.report.status).toBe("inconclusive");
+  expect(result.report.agent.gaps.join(" ")).toContain("A report cannot serve as evidence for its own claims");
+  expect(result.report.verification.coverage[0].status).toBe("unverified");
+  expect(result.report.verification.observations[0]).toMatchObject({ kind: "review", status: "inconclusive", evidence: [] });
+  const saved = parseRecord(readFileSync(join(value.output, "report.md"), "utf8"));
+  expect(saved.record.status).toBe("inconclusive");
+  expect(saved.record.observations[0].evidence).toEqual([]);
 });
 
 test("the verification frontier supplies only missing requirements alongside completed evidence", () => {
@@ -504,82 +534,153 @@ test("a reused evidence directory preserves the earlier result and refuses a new
   expect(readFileSync(join(value.output, "result.json"), "utf8")).toBe(previous);
 });
 
-function client(event, comments = [], currentSha = event.pull_request.head.sha) {
+function client(event, currentSha = event.pull_request.head.sha) {
   const calls = [];
+  const comments = [];
+  const states = [];
+  const author = { id: 17, login: "github-actions[bot]", type: "Bot" };
+  const current = { ...event.pull_request, head: { sha: currentSha }, html_url: "https://github.com/consumer/project/pull/42" };
   return {
-    calls,
+    calls, comments, states, current,
     github: {
-      rest: {
-        pulls: { get: async input => { calls.push(["get", input]); return { data: { ...event.pull_request, head: { sha: currentSha } } }; } },
-        issues: {
-          listComments: () => {},
-          createComment: async input => { calls.push(["create", input]); return input; },
-          updateComment: async input => { calls.push(["update", input]); return input; },
-        },
+      request: async (route, input) => {
+        calls.push([route, input]);
+        if (route === "GET /repos/consumer/project/pulls/42") return { status: 200, data: current };
+        if (route.startsWith("POST /repos/consumer/project/statuses/")) {
+          states.push(input);
+          return { status: 201, data: { creator: author, ...input } };
+        }
+        if (route === "POST /repos/consumer/project/issues/42/comments") {
+          const item = { id: comments.length + 1, user: author, html_url: `${current.html_url}#issuecomment-${comments.length + 1}`, ...input };
+          comments.push(item);
+          return { status: 201, data: item };
+        }
+        throw new Error(`Unexpected API request: ${route}`);
       },
-      paginate: async (_method, input) => { calls.push(["list", input]); return comments; },
+      paginate: async route => {
+        calls.push([route]);
+        if (route === "GET /repos/consumer/project/pulls/42/artifacts?per_page=100") throw Object.assign(new Error("Not found"), { status: 404 });
+        if (route === "GET /repos/consumer/project/issues/42/comments?per_page=100") return comments;
+        if (route === `GET /repos/consumer/project/commits/${currentSha}/statuses?per_page=100`) return states.slice().reverse();
+        throw new Error(`Unexpected pagination: ${route}`);
+      },
     },
-    context: { payload: event, repo: { owner: "consumer", repo: "project" }, runId: 123, serverUrl: "https://github.com" },
+    context: { payload: event, repo: { owner: "consumer", repo: "project" }, runId: 123, runAttempt: 1,
+      actor: "human-who-triggered-the-workflow", serverUrl: "https://github.com" },
   };
 }
 
-test("creates a comment on the importing PR with stage results and its evidence link", async () => {
+test("publishes the shared record on the importing PR with stage results and an optional evidence link", async () => {
   const value = fixture();
   const { report } = run(value);
   const api = client(value.event);
   await publishComment({ ...api, raw: JSON.stringify(report), artifactUrl: "https://github.com/consumer/project/actions/runs/123/artifacts/456", conclusion: "success" });
-  const request = api.calls.find(([method]) => method === "create")[1];
-  expect(request.owner).toBe("consumer");
-  expect(request.repo).toBe("project");
-  expect(request.issue_number).toBe(42);
-  expect(request.body).toContain("Final verification — Passed");
-  expect(request.body).toContain("Download evidence");
+  const request = api.calls.find(([route]) => route === "POST /repos/consumer/project/issues/42/comments")[1];
+  expect(request.body).toContain("Verification — Passed");
+  expect(request.body).toContain("Retained evidence");
   expect(request.body).toContain("agent/observation\\.txt");
+  const parsed = parseRecord(request.body);
+  expect(parsed.record.run.id).toBe(report.id);
+  expect(parsed.record.run.source).toEqual(report.source);
+  expect(parsed.publication).toMatchObject({ status: "passed", sourceMatches: true, publisher: { id: 17 } });
+  expect(api.calls.filter(([route]) => route.includes("/statuses/")).map(([, body]) => body.state)).toEqual(["pending", "success"]);
 });
 
-test("updates the existing bot comment instead of duplicating it or overwriting a user's comment", async () => {
+test("a failed job cannot publish success even when the captured checks passed", async () => {
   const value = fixture();
   const { report } = run(value);
-  const api = client(value.event, [
-    { id: 1, user: { type: "User" }, body: marker },
-    { id: 2, user: { type: "Bot" }, body: `${marker}\nEarlier result` },
-  ]);
-  await publishComment({ ...api, raw: JSON.stringify(report), artifactUrl: "https://example.test/evidence", conclusion: "success" });
-  expect(api.calls.find(([method]) => method === "update")[1].comment_id).toBe(2);
-  expect(api.calls.some(([method]) => method === "create")).toBe(false);
+  const api = client(value.event);
+  const result = await publishComment({ ...api, raw: JSON.stringify(report), conclusion: "failure" });
+  expect(result.status).toBe("error");
+  const parsed = parseRecord(api.comments[0].body);
+  expect(parsed.record.status).toBe("passed");
+  expect(parsed.publication.status).toBe("inconclusive");
+  expect(parsed.publication.assessment.problems.join(" ")).toContain("job finished with status: failure");
 });
 
 test("a stale PR head does not overwrite the current verification comment", async () => {
   const value = fixture();
-  const api = client(value.event, [], "newer-commit");
+  const api = client(value.event, "newer-commit");
   const result = await publishComment({ ...api, raw: "", conclusion: "cancelled" });
   expect(result.skipped).toContain("newer head");
-  expect(api.calls.map(([method]) => method)).toEqual(["get"]);
+  expect(api.calls.map(([route]) => route)).toEqual(["GET /repos/consumer/project/pulls/42"]);
 });
 
 test("an edited PR request cannot receive a result based on its old requirement plan", async () => {
   const value = fixture();
   const api = client(value.event);
-  api.github.rest.pulls.get = async () => ({ data: { ...value.event.pull_request, body: "The requested outcome has changed" } });
+  api.current.body = "The requested outcome has changed";
   const result = await publishComment({ ...api, raw: "", conclusion: "success" });
   expect(result.skipped).toContain("request changed");
-  expect(api.calls).toEqual([]);
+  expect(api.calls.map(([route]) => route)).toEqual(["GET /repos/consumer/project/pulls/42"]);
 });
 
-test("a mismatched or absent result produces an inconclusive comment rather than trusting another PR's report", async () => {
+test("CI invalidates an earlier passing status when the new result's initial PR lookup fails", async () => {
+  const value = fixture();
+  const { report } = run(value);
+  const api = client(value.event);
+  await publishComment({ ...api, raw: JSON.stringify(report), conclusion: "success" });
+  expect(api.states.at(-1).state).toBe("success");
+  const failed = structuredClone(report);
+  failed.id = `${report.id}-failed`;
+  failed.startedAt = new Date(Date.parse(report.startedAt) + 1000).toISOString();
+  failed.finishedAt = failed.startedAt;
+  failed.status = "failed";
+  failed.checks.status = "failed";
+  failed.verification.checks[0].status = "failed";
+  failed.verification.checks[0].exitCode = 1;
+  const request = api.github.request;
+  api.github.request = (route, body) => route === "GET /repos/consumer/project/pulls/42"
+    ? Promise.reject(new Error("PR metadata unavailable")) : request(route, body);
+  await expect(publishComment({ ...api, raw: JSON.stringify(failed), conclusion: "failure" })).rejects.toThrow("PR metadata unavailable");
+  expect(api.states.at(-1).state).toBe("error");
+  expect(api.comments).toHaveLength(1);
+  expect(parseRecord(api.comments[0].body).record.status).toBe("passed");
+});
+
+test.each(["mismatched", "absent", "malformed"])("a %s result publishes an inconclusive record and error status", async mode => {
   const value = fixture();
   const { report } = run(value);
   report.repository = "another/repository";
   const api = client(value.event);
-  await publishComment({ ...api, raw: JSON.stringify(report), conclusion: "failure" });
-  const body = api.calls.find(([method]) => method === "create")[1].body;
-  expect(body).toContain("Final verification — Inconclusive");
-  expect(body).toContain("different PR or revision");
+  const raw = mode === "mismatched" ? JSON.stringify(report) : mode === "malformed" ? "{}" : "";
+  const result = await publishComment({ ...api, raw, conclusion: "failure" });
+  const parsed = parseRecord(api.comments[0].body);
+  expect(parsed.record.status).toBe("inconclusive");
+  expect(parsed.record.run.id).toBe("actions-123-1");
+  expect(parsed.record.gaps.length).toBeGreaterThan(0);
+  if (mode === "mismatched") expect(parsed.record.gaps.join(" ")).toContain("different PR or revision");
+  expect(result.status).toBe("error");
 });
 
-test("an upload or job failure remains visible even when the captured checks passed", () => {
+test("a complete textual assessment passes without an archive; a job failure remains a separate publication gap", () => {
   const { report } = run(fixture());
-  const body = formatComment(report, { artifactUrl: "", runUrl: "https://example.test/run", conclusion: "failure" });
-  expect(body).toContain("Final verification — Inconclusive");
-  expect(body).toContain("evidence upload is unavailable");
+  const success = parseRecord(formatComment(report, { artifactUrl: "", runUrl: "https://example.test/run", conclusion: "success" }));
+  expect(success.publication.status).toBe("passed");
+  const failure = parseRecord(formatComment(report, { artifactUrl: "", runUrl: "https://example.test/run", conclusion: "failure" }));
+  expect(failure.record).toEqual(success.record);
+  expect(failure.publication.status).toBe("inconclusive");
+  expect(failure.publication.assessment.problems.join(" ")).toContain("job finished with status: failure");
+});
+
+test.each([true, false])("CI retains the actual tested merge source and checks its relationship to the PR (matching parents: %s)", async matches => {
+  const value = fixture();
+  const { report } = run(value);
+  const head = value.event.pull_request.head.sha;
+  value.event.pull_request.base = { sha: "base-commit" };
+  report.testedSha = "tested-merge";
+  report.source.revision = report.testedSha;
+  const api = client(value.event);
+  api.context.sha = report.testedSha;
+  const request = api.github.request;
+  api.github.request = async (route, body) => route === "GET /repos/consumer/project/commits/tested-merge"
+    ? { status: 200, data: { sha: report.testedSha, parents: [{ sha: "base-commit" }, { sha: matches ? head : "another-head" }] } }
+    : request(route, body);
+  const result = await publishComment({ ...api, raw: JSON.stringify(report), conclusion: "success" });
+  const parsed = parseRecord(api.comments[0].body);
+  expect(parsed.record.run.source.revision).toBe("tested-merge");
+  expect(parsed.record.run.testedSha).toBe("tested-merge");
+  expect(parsed.publication.headSha).toBe(head);
+  expect(parsed.publication.sourceMatches).toBe(matches);
+  expect(result.status).toBe(matches ? "success" : "error");
 });

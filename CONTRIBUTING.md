@@ -51,7 +51,11 @@ Keep the shared code independent of any application's stack. Put application set
 
 Use the [verification reference](skills/verify-work/references/verification.md) for the shared contracts and [`.groundwork/VERIFY.md`](.groundwork/guides/project.md) to find project context and the catalogue. Keep that bootstrap small; put setup, constraints and journeys in guides or subsystem maps, and configuration in `.groundwork/verify.d/*.json`. Fragments are auto-discovered and validated together, so no central include list is needed. Keep task, run and PR history out of durable guidance.
 
+Read relevant [decisions](.groundwork/decisions/local-first-verification.md) before changing the verification contract. Promote meaningful choices from task notes before final verification, using one `.groundwork/decisions/<topic>.md` per decision. Keep status, reason and consequences; link superseding records rather than erasing history. In adopting projects, reuse their existing ADR location first. Agents maintain this as part of the task, without a central index or records for trivial choices.
+
 Keep plan bindings tied to actual assertions. Exercise failures and unavailable observations that the change can affect; a matching label or artifact is not proof of a requirement. Reusable checks require deterministic, complete inputs and intact evidence. Keep whole-source content matching, environment-value digests and evidence validation aligned across CLI, PR and portal consumers.
+
+Keep `result.json` authoritative and derive `report.md` on each local save, independently of GitHub and separately from reusable receipt data. Optional PR publication carries the readable account and versioned structured summary, not permission to reuse a remote result. Reassess the actual run and target source for publication while preserving the original snapshot. Content-equivalent committed work can match a run captured while dirty. Preserve coverage and review gates; an archive alone must not determine status.
 
 `prepareProject` runs before `init`, `verify`, guide/report/map commands and PR configuration/source capture. Conversion preserves authored instructions in active guides and configuration semantics in fragments, then removes superseded metadata and ignore archives. Update only affected instruction links. Keep `loadConfig` and portal reads pure, and preparation idempotent. Historical reports retain their identity and do not become reusable receipts through migration.
 
@@ -72,3 +76,5 @@ To run locally, point `GITHUB_EVENT_PATH` at a JSON file containing the target `
 Then run `bun pr-verification/scripts/verify.mjs`. Local runs use the Copilot CLI's existing authentication. In GitHub Actions, the `COPILOT_TOKEN` secret supplies the credential.
 
 Keep project-specific policy in the calling workflow or project documentation. The runner and reporting code should remain generic.
+
+Caller workflows grant `pull-requests: write` and `statuses: write` for the reporting job. The optional evidence archive is a download convenience; valid text reports still depend on source matching, assertions, observations and coverage.

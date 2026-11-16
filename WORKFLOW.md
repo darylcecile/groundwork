@@ -4,11 +4,11 @@
 
 ## The working loop
 
-1. **Understand the outcome.** Read the request, project rules, relevant code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
+1. **Understand the outcome.** Read the request, project rules, relevant decisions, code, callers, and tests. For nontrivial work, use `explore` to trace the affected behaviour, ownership, data flow, constraints, and verification paths; reuse current findings from the task. Identify the observable result and the important constraints. Ask about ambiguity only when it changes the work. For a substantial task, briefly state the acceptance conditions before editing; small tasks can keep this lightweight.
 2. **Choose how to prove it.** Find the real path and existing checks; define success assertions before changing the implementation. Once the target and flow are known, batch deterministic multi-step browser, device, API, or CLI verification in an existing driver/test or the smallest script before executing—even on the first run. Keep interactive discovery bounded to unknowns and preserve sequential stateful order. For a bug, reproduce the reported failure when possible.
-3. **Make the smallest suitable change.** Follow the project's established patterns. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
+3. **Make the smallest suitable change.** Follow the project's established patterns. Promote meaningful durable choices from task notes into decision records before final verification. Complete a coherent batch, then check it. Resolve relevant failures autonomously and give brief updates at meaningful milestones or blockers.
 4. **Verify and review.** Submit selected checks and any saved plan in one run. Groundwork adds plan-bound checks, required checks and active invariants; eligible deterministic checks may reuse matching receipts. Inspect assertions, evidence and the complete diff for missed requirements, regressions, unnecessary complexity and unrelated changes. Use `--fresh` when a new execution is needed. Stop when the requested outcome and required checks are satisfied.
-5. **Hand back the result.** State what works, the evidence, and any remaining gaps. Include requested delivery state: commits, pushes, PRs, or releases. Resolve every explicit deliverable or explain its blocker.
+5. **Hand back the result.** Keep the local verification record and state what works, the evidence, and any remaining gaps. Publish the record as part of PR delivery under existing permissions and approval rules; local-only tasks stay local. Include requested delivery state: commits, pushes, PRs, or releases. Resolve every explicit deliverable or explain its blocker.
 
 ## What confidence means
 
@@ -43,6 +43,8 @@ Choose evidence proportional to the actual change. Reuse existing coverage. Add 
 
 A reusable receipt preserves an actual check result with its inputs and evidence. It applies only when source content, check/engine/runtime identity, context, plan and declared inputs match. Enable `reuse` only for deterministic checks with complete inputs; declare relevant environment variables and ignored files. A saved screenshot still needs inspection, and a receipt cannot establish a live state that has changed. Requirements marked `review: true` also need an evidence-backed `kind: "review"` observation explicitly covering their ID. The PR agent focuses on remaining gaps, including unsatisfied review obligations; already-valid review evidence needs no redundant agent pass. An agent pass never erases a check failure.
 
+Verification keeps a local record independently of optional PR publication. Publishing makes the account readable elsewhere; it does not import proof into the local receipt store. Source/current-PR matching and coverage/review gates still apply. Full archives are optional, while evidence required for the actual claim remains required.
+
 ## The project contribution
 
 The agent maintains project verification as part of ordinary work. Root `AGENTS.md` links to the small `.groundwork/VERIFY.md` bootstrap; shared setup, constraints and journeys live in `.groundwork/guides/` or subsystem maps. Checks, context and catalogue entries live in auto-discovered `.groundwork/verify.d/*.json`. Each journey explains:
@@ -54,6 +56,8 @@ The agent maintains project verification as part of ordinary work. Root `AGENTS.
 5. Which command or direct observation checks that, and where is the evidence?
 
 The `explore` skill establishes those relationships. During adoption or an explicit mapping request, retain stable findings in `.groundwork/maps/<area>.md` and link them from the feature's catalogue entry or guide. A new feature needs no central include list or root index edit. Include source references, ownership and flow relationships, constraints, verification paths and enduring gaps. Keep task, PR and run histories in their own records. Maps guide investigation; their source-derived claims do not substitute for exercising the behaviour.
+
+Keep durable choices in the project's existing ADR location, falling back to `.groundwork/decisions/<topic>.md`. Use one bounded file per meaningful decision with status, reason and consequences, linked from relevant guides, maps, plans or reports. Preserve superseded decisions and link their successors. The agent maintains these records during ordinary work; task notes link to the enduring rationale before they are deleted.
 
 Use `groundwork map [feature]` to inspect the catalogue as an ASCII overview or focused relationship map. Source-backed direct dependencies live in each behaviour's optional `dependsOn` list; the CLI derives consumers from those links. Keep their rationale in the narrative map and use it to choose further investigation and verification.
 
@@ -69,7 +73,7 @@ Keep the final response short, for example:
 
 > Theme selection now survives restart. The persistence scenario executed and passed; required checks reused matching receipts. The restarted screen was inspected. Evidence: run `<id>` and its portal link. Firefox was not exercised. Changes are local; not pushed.
 
-Use the invocation's own run ID with `groundwork view report <id>`, rather than assuming the latest pointer still names it. State whether supporting evidence was newly executed or reused. In CI, link retained evidence paths or uploaded artifacts.
+Use the invocation's own run ID with `groundwork view report <id>`, rather than assuming the latest pointer still names it. State whether supporting evidence was newly executed or reused. To share it, use `groundwork publish pr [number-or-url] --run <id>`; `groundwork view pr [number-or-url]` reads published verification. Publication reassesses the run against the target source without rewriting its original snapshot. In CI, link retained evidence paths or uploaded artifacts when available.
 
 ## Improving the framework
 

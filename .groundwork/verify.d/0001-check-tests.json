@@ -11,6 +11,7 @@
         "feature-map",
         "drivers",
         "pr-verification",
+        "verification-records",
         "portal"
       ]
     }

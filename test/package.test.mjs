@@ -16,7 +16,8 @@ test("the distributed CLI installs its skills and serves the bundled portal with
   const home = join(root, "home");
   let server;
   mkdirSync(home);
-  const env = { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0", HOME: home, COPILOT_HOME: join(home, ".copilot"), XDG_CONFIG_HOME: join(home, ".config") };
+  const env = { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0",
+    GROUNDWORK_STATE_HOME: join(root, "state"), HOME: home, COPILOT_HOME: join(home, ".copilot"), XDG_CONFIG_HOME: join(home, ".config") };
   function run(command, args, cwd = repository, environment = process.env) {
     const result = spawnSync(command, args, { cwd, env: environment, encoding: "utf8" });
     if (result.status !== 0) throw new Error(`${command} failed: ${result.stdout}${result.stderr}`);
@@ -51,7 +52,9 @@ test("the distributed CLI installs its skills and serves the bundled portal with
     expect(readdirSync(project).sort()).toEqual([".groundwork", "AGENTS.md"]);
     expect(loadConfig(project).checks).toEqual({});
     expect(readFileSync(join(project, ".groundwork/VERIFY.md"), "utf8").trim().length).toBeGreaterThan(0);
-    writeFileSync(join(project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {}, behaviours: {
+    writeFileSync(join(project, ".groundwork/verify.d/feature.json"), JSON.stringify({ checks: {
+      check: { command: "printf 'Packaged assertion passed\\n'", expect: "The installed CLI retains its record" },
+    }, behaviours: {
       saving: { description: "Save a document", paths: ["src/save.mjs"], dependsOn: ["storage"] },
       storage: { description: "Store a document" },
     } }));
@@ -59,6 +62,19 @@ test("the distributed CLI installs its skills and serves the bundled portal with
     expect(map).toContain("Feature map: saving");
     expect(map).toContain("[saving] -> [storage]");
     expect(map).toContain("Implementation paths: src/save.mjs");
+    run("git", ["init", "--quiet"], project, env);
+    const verified = run(realBun, [join(home, ".agents/skills/verify-work/verify.mjs"), "verify"], project, env);
+    const id = verified.match(/^Run: (.+)$/m)[1];
+    const record = JSON.parse(run(realBun, ["--eval", `
+      import { readFileSync } from "node:fs";
+      import { join } from "node:path";
+      import { parseRecord } from ${JSON.stringify(join(packaged, "lib/report.mjs"))};
+      import { evidenceStore } from ${JSON.stringify(join(packaged, "lib/store.mjs"))};
+      console.log(JSON.stringify(parseRecord(readFileSync(join(evidenceStore(process.cwd()).runs, ${JSON.stringify(id)}, "report.md"), "utf8"))));
+    `], project, env));
+    expect(record.record.run.id).toBe(id);
+    expect(record.record.status).toBe("passed");
+    expect(record.record.checks[0].name).toBe("check");
     expect(existsSync(join(project, ".groundwork/runs"))).toBe(false);
     expect(existsSync(join(project, ".groundwork/latest"))).toBe(false);
     const scope = join(realpathSync(home), ".cache", "groundwork", "portal");

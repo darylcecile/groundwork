@@ -82,11 +82,13 @@ Maps are tracked documents reached through relevant catalogue entries and featur
 
 ## Tasks
 
-The [`implement` skill](skills/implement/SKILL.md) turns that context into `.groundwork/tasks/<priority>-<name>.md`. Each task records its goal and scope, references, decisions, definition of done, implementing and judging model IDs, and implementation and verification checklists. Larger requests can be split into coherent pieces and delegated with the relevant exploration findings. Priorities are unique; notes are ignored local working files, updated during the work and deleted on completion.
+The [`implement` skill](skills/implement/SKILL.md) turns that context into `.groundwork/tasks/<priority>-<name>.md`. Each task records its goal and scope, references, decision links, definition of done, implementing and judging model IDs, and implementation and verification checklists. Larger requests can be split into coherent pieces and delegated with the relevant exploration findings. Priorities are unique; notes are ignored local working files, updated during the work and deleted on completion.
+
+Meaningful decisions outlive those notes. The agent consults and maintains the project's existing ADR location, or `.groundwork/decisions/<topic>.md` when none exists. Each bounded record keeps its status, reason and consequences; a later decision links to the one it supersedes. The agent promotes durable choices before final verification and note deletion, without asking users to maintain a decision log for routine edits.
 
 For theme persistence, the definition of done should require a fresh application process to read the saved selection. That gives both the implementer and reviewer an observable outcome to work towards.
 
-For multi-part changes, save a separate JSON verification plan in `.groundwork/plans/` stating the goal and requirements, with expectations bound to check or behaviour IDs. The runner freezes the plan and schedules its bound checks, including checks covering its behaviours, alongside required and active invariant checks. Task Markdown is agent working context, not a CLI-parsed plan. Add `review: true` to a requirement that also needs an evidence-backed review observation. Straightforward changes can track verification requirements in chat.
+For multi-part changes, save a separate JSON verification plan in `.groundwork/plans/` stating the goal and requirements, with expectations bound to check or behaviour IDs. Optional `decisions` lists project-relative `.md` decision files. The runner freezes the plan and schedules its bound checks, including checks covering its behaviours, alongside required and active invariant checks. Task Markdown is agent working context, not a CLI-parsed plan. Add `review: true` to a requirement that also needs an evidence-backed review observation. Straightforward changes can track verification requirements in chat.
 
 ## Judgement
 
@@ -112,6 +114,8 @@ groundwork verify --changed main --plan .groundwork/plans/task.json
 groundwork verify theme-persists --fresh      # Execute even if a reusable receipt exists
 groundwork view report                       # Inspect this workspace's latest result
 groundwork view report <id>                  # Inspect a specific run
+groundwork publish pr [number-or-url] --run <id> # Share this invocation's run
+groundwork view pr [number-or-url]            # Read verification published on a PR
 ```
 
 Named, plan-based and change-aware runs include required checks and active invariant checks. With `--changed`, scoped invariants follow matching paths and unscoped invariants always apply; otherwise all invariants are active. Without names or `--changed`, every configured check is selected, including when a plan is supplied. Inspect unmapped changes and behaviours without checks for planning gaps.
@@ -134,13 +138,23 @@ Opt in only when those inputs fully determine the result. Declare relevant ignor
 
 Reports show whether each check executed or reused a receipt. Reuse preserves the original observation; it does not create a new live or visual observation. Review the evidence before claiming it establishes the current requirement.
 
+### Local records and PR sharing
+
+Verification always keeps a local record, whether or not a PR or GitHub access exists. Each local save retains authoritative `result.json` and derives `report.md` with readable Markdown and hidden, versioned JSON. It describes what was checked and why, the source revision and local changes, outcomes, fresh or reused results, context and timing, remaining gaps, and relevant decision links. Generated records belong with the run in the external evidence store.
+
+For tasks that include PR delivery, the agent shares the record as part of delivery under existing permissions and approval rules; local-only tasks stay local. Use `groundwork publish pr [number-or-url] --run <id>` with the invocation's own required run ID; omitting the PR selects the current branch's PR. Publication uses a PR artifact when available, otherwise a comment, and reassesses the run and target source while retaining the original snapshot. A dirty run can support a PR once identical source content is committed and pushed; coverage and review obligations still apply.
+
+`groundwork view pr [number-or-url]` shows recorded outcomes and whether they match the current PR head, with historical records still visible. It does not reassess the local environment; a URL also works outside an adopted project. Published reports provide review context, not automatically reusable receipts.
+
+A full evidence archive is optional; its absence alone does not invalidate a result. Retain the observations and evidence the claim actually needs, including visual inspection and screenshots required for UI work. Publishing a summary does not replace that work. See the [verification reference](skills/verify-work/references/verification.md#local-records-and-pr-publication) for the contract.
+
 ## Local portal
 
-Run any `groundwork` command outside CI to register its project with the local portal. One small background server handles all your repositories and listens on `127.0.0.1`. Registration is silent. Set `GROUNDWORK_PORTAL=0` to disable automatic startup.
+Run a local project command such as `groundwork verify`, `view report`, `view guide` or `map` outside CI to register its project with the local portal. One small background server handles all your repositories and listens on `127.0.0.1`. Registration is silent. Set `GROUNDWORK_PORTAL=0` to disable automatic startup.
 
 Use the project selector in the top bar to switch repositories. The portal remembers registered project paths under `$XDG_CACHE_HOME/groundwork/portal` (default `~/.cache/groundwork/portal`), separately from verification data. Read the listening port from the `port` file in that directory and open `http://127.0.0.1:<port>`. Project-specific URLs can be bookmarked.
 
-The server exits after 30 minutes without an open portal or recent requests. The next CLI command starts it again with the registered projects available; an updated server build replaces the shared daemon automatically.
+The server exits after 30 minutes without an open portal or recent requests. The next local project command starts it again with the registered projects available; an updated server build replaces the shared daemon automatically.
 
 The portal reads saved evidence and the project's catalogue:
 
@@ -175,6 +189,7 @@ AGENTS.md                     Agent-discoverable workflow reference
   scripts/                    Reusable Groundwork-owned drivers and helpers
   config/                     Supporting tool configs, loaded explicitly
   maps/                       Reusable subsystem and feature maps
+  decisions/                  Durable decisions, when the project has no ADR location
   plans/                      Local JSON verification plans (ignored)
   tasks/                      Local Markdown implementation notes (ignored)
   tmp/                        Scratch files (ignored)

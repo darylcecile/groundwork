@@ -6,9 +6,10 @@ import { catalogue, catalogueIssues, hasConfig, loadConfig, parseConfig, selectC
 import { groundworkPath } from "../../lib/layout.mjs";
 import { prepareProject } from "../../lib/migration.mjs";
 import { assess, ensure, readJSON, refreshEvidence, safePath, validatePlan, withInvariants, within, writeJSON } from "../../lib/model.mjs";
+import { renderRecord } from "../../lib/report.mjs";
 import { changedFiles, executeCommand, git, runChecks, source } from "../../lib/runner.mjs";
 import { prepareEvidenceStore } from "../../lib/store.mjs";
-import { inspectAgent, verdict, verificationFrontier } from "./report.mjs";
+import { inspectAgent, makePRRecord, verdict, verificationFrontier } from "./report.mjs";
 
 const repository = resolve(process.env.PR_VERIFY_REPOSITORY || process.cwd());
 const projectDirectory = resolve(repository, process.env.PR_VERIFY_DIRECTORY || ".");
@@ -17,8 +18,12 @@ let output;
 let initialized = false;
 const pending = log => ({ status: "inconclusive", exitCode: null, durationMs: 0, log });
 const result = {
-  version: 2, id, startedAt: new Date().toISOString(), finishedAt: null,
-  repository: process.env.GITHUB_REPOSITORY || "", pullRequest: 0, headSha: "unknown", testedSha: null,
+  version: 2, id, kind: "pr", startedAt: new Date().toISOString(), finishedAt: null,
+  runner: { runtime: process.versions.bun ? "bun" : "node", version: process.versions.bun || process.version,
+    platform: process.platform, architecture: process.arch, workflowRun: process.env.GITHUB_RUN_ID || null,
+    workflowAttempt: process.env.GITHUB_RUN_ATTEMPT || null },
+  repository: process.env.GITHUB_REPOSITORY || "unknown", pullRequest: 0, headSha: "unknown", testedSha: null,
+  projectPath: relative(repository, projectDirectory).split(sep).join("/"),
   planning: pending("planning.log"), verification: assess({ problems: ["A verification plan is not available."] }),
   status: "inconclusive", setup: pending("setup.log"), checks: pending("checks.log"),
   agent: { execution: pending("agent.log"), summary: "Behaviour verification has not completed.", checks: [], gaps: [] },
@@ -27,7 +32,9 @@ const result = {
 
 function save() {
   result.status = verdict(result);
+  if (!result.finishedAt && result.status === "passed") result.status = "inconclusive";
   writeJSON(join(output, "result.json"), result);
+  writeFileSync(join(output, "report.md"), renderRecord(makePRRecord(result)));
   const compact = { ...result, verification: { ...result.verification,
     checks: result.verification.checks.map(({ trials, baseline, observations, ...check }) => check) } };
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `result=${JSON.stringify(compact)}\n`);
@@ -150,7 +157,11 @@ try {
     const base = process.env.PR_VERIFY_COMPARE_BASE === "true" ? comparisonSha : null;
     if (process.env.PR_VERIFY_COMPARE_BASE === "true" && !base) result.problems.push("The baseline revision is unavailable.");
     configured = await runChecks({ root: cwd, directory: output, checks: config.checks, names, plan,
-      base, context: context.environment, env: commandEnv, excluded: artifacts });
+      base, context: context.environment, env: commandEnv, excluded: artifacts,
+      onUpdate(checks, observations) {
+        result.verification = assess({ plan, checks, observations, problems: result.problems, context: context.environment });
+        save();
+      } });
     const checked = assess({ checks: configured.checks, observations: configured.observations, problems: configured.problems });
     result.checks = { status: checked.status, exitCode: checked.status === "passed" ? 0 : checked.status === "failed" ? 1 : 2,
       durationMs: configured.checks.reduce((total, check) => total + check.durationMs, 0), log: "checks.log" };

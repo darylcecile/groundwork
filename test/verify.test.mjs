@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
   renameSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogueIssues, configFiles, loadConfig } from "../lib/config.mjs";
 import { evidenceStore } from "../lib/store.mjs";
+import { parseRecord, renderRecord } from "../lib/report.mjs";
 
 const cli = fileURLToPath(new URL("../skills/verify-work/verify.mjs", import.meta.url));
 const realBun = realpathSync(process.execPath);
@@ -75,6 +76,58 @@ function saved(root) {
   const id = readFileSync(storage.latest, "utf8").trim();
   const directory = join(storage.runs, id);
   return { directory, data: JSON.parse(readFileSync(join(directory, "result.json"), "utf8")) };
+}
+
+function fakeGitHub({ head = "a".repeat(40), comments = [], statuses = [], denied = false } = {}) {
+  const root = temporaryDirectory();
+  const statePath = join(root, "github.json");
+  const url = "https://github.example/example/project/pull/7";
+  writeFileSync(statePath, JSON.stringify({ head, comments, statuses, denied, calls: [], url }));
+  write(root, "gh", `#!${realBun}
+import { readFileSync, writeFileSync } from "node:fs";
+const file = process.env.TEST_GITHUB_STATE;
+const state = JSON.parse(readFileSync(file, "utf8"));
+const args = process.argv.slice(2);
+const body = args.includes("--input") ? JSON.parse(readFileSync(0, "utf8")) : undefined;
+state.calls.push({ args, body });
+const save = () => writeFileSync(file, JSON.stringify(state));
+function send(data, status = 200) {
+  save();
+  if (args.includes("--include")) process.stdout.write("HTTP/2.0 " + status + " Response\\r\\nContent-Type: application/json\\r\\n\\r\\n");
+  console.log(JSON.stringify(data));
+  if (status >= 400) { console.error("gh: " + data.message + " (HTTP " + status + ")"); process.exit(1); }
+  process.exit(0);
+}
+if (state.denied) send({ message: "GitHub is unavailable" }, 401);
+if (args[0] === "pr" && args[1] === "view") send({ number: 7, headRefOid: state.head, url: state.url });
+if (args[0] !== "api" || args[args.indexOf("--hostname") + 1] !== "github.example") send({ message: "Explicit host is required" }, 400);
+const method = args[args.indexOf("--method") + 1];
+const path = args.find(arg => arg.startsWith("/repos/"));
+if (method === "GET" && path === "/repos/example/project/pulls/7") send({ number: 7, html_url: state.url, head: { sha: state.head } });
+if (method === "GET" && path === "/repos/example/project/commits/" + state.head + "/statuses?per_page=100") send([state.statuses]);
+if (path?.includes("/artifacts")) send({ message: "Not Found" }, 404);
+if (method === "GET" && path === "/repos/example/project/issues/7/comments?per_page=100") {
+  if (!args.includes("--paginate") || !args.includes("--slurp")) send({ message: "Pagination required" }, 400);
+  send([state.comments.slice(0, 1), state.comments.slice(1)]);
+}
+const author = { id: 41, login: "publisher", type: "User" };
+if (method === "POST" && path?.startsWith("/repos/example/project/statuses/")) send({ creator: author }, 201);
+if (method === "POST" && path === "/repos/example/project/issues/7/comments") {
+  const comment = { id: state.comments.length + 1, body: body.body, user: author, html_url: state.url + "#issuecomment-" + (state.comments.length + 1) };
+  state.comments.push(comment);
+  send(comment, 201);
+}
+if (method === "PATCH" && path?.startsWith("/repos/example/project/issues/comments/")) {
+  const comment = state.comments.find(item => item.id === Number(path.split("/").at(-1)));
+  if (!comment) send({ message: "Unknown comment" }, 404);
+  comment.body = body.body;
+  send(comment);
+}
+send({ message: "Unexpected request: " + args.join(" ") }, 400);
+`);
+  chmodSync(join(root, "gh"), 0o755);
+  return { url, env: { PATH: `${root}:${dirname(realBun)}:${process.env.PATH}`, TEST_GITHUB_STATE: statePath },
+    state: () => JSON.parse(readFileSync(statePath, "utf8")) };
 }
 
 test("fresh project setup keeps owned files under .groundwork and is repeatable", () => {
@@ -339,12 +392,21 @@ process.exit(actual === "dark" ? 0 : 1);
   expect(failure.code).toBe(1);
   const before = saved(root);
   expect(before.data.checks[0].status).toBe("failed");
+  const failedRecord = parseRecord(readFileSync(join(before.directory, "report.md"), "utf8"));
+  expect(failedRecord.record.status).toBe("failed");
+  expect(failedRecord.record.run.id).toBe(before.data.id);
+  expect(failedRecord.record.checks[0].status).toBe("failed");
   expect(readFileSync(join(before.directory, "theme-persists/output.log"), "utf8")).toContain("Theme after restart: light");
   write(root, "app.mjs", readFileSync(join(root, "app.mjs"), "utf8").replace('theme: "light"', "theme: process.argv[3]"));
   const success = invoke(root, ["verify", "theme-persists"]);
   expect(success.code).toBe(0);
   const after = saved(root);
   expect(after.data.checks[0].status).toBe("passed");
+  const passedRecord = parseRecord(readFileSync(join(after.directory, "report.md"), "utf8"));
+  expect(passedRecord.record.status).toBe("passed");
+  expect(passedRecord.record.run.source).toEqual(after.data.source);
+  expect(passedRecord.record.run.runner.runtime).toBe("bun");
+  expect(passedRecord.record.checks[0].receipt.disposition).toBe("executed");
   expect(after.data.source.dirty).toBe(true);
   expect(after.data.source.fingerprint).not.toBe(before.data.source.fingerprint);
   expect(after.directory).not.toBe(before.directory);
@@ -797,13 +859,222 @@ test("an interrupted attempt replaces an earlier success with an incomplete late
   const child = spawn(realBun, [cli, "verify"], { cwd: root, stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, PATH: `${dirname(realBun)}:${process.env.PATH}`, GROUNDWORK_PORTAL: "0" } });
   let output = "";
+  let progressRecord;
   child.stdout.on("data", chunk => {
     output += chunk;
-    if (/^READY$/m.test(output)) child.kill("SIGTERM");
+    if (progressRecord === undefined && /^READY$/m.test(output)) {
+      progressRecord = parseRecord(readFileSync(join(saved(root).directory, "report.md"), "utf8"));
+      child.kill("SIGTERM");
+    }
   });
   await once(child, "close");
   expect(saved(root).directory).not.toBe(previous.directory);
+  expect(progressRecord.record.status).toBe("inconclusive");
+  expect(progressRecord.record.run.finishedAt).toBeNull();
+  const interruptedRecord = parseRecord(readFileSync(join(saved(root).directory, "report.md"), "utf8"));
+  expect(interruptedRecord.record.status).toBe("inconclusive");
+  expect(interruptedRecord.record.run.finishedAt).toBeNull();
   const result = invoke(root, ["view", "report"]);
   expect(result.code).toBe(2);
   expect(result.output).toContain("selected run did not finish");
+});
+
+test("local init, verification and saved reports work while GitHub is unavailable", () => {
+  const root = temporaryDirectory();
+  const github = fakeGitHub({ denied: true });
+  git(root, "init", "--quiet");
+  expect(invoke(root, ["init"], github.env).code).toBe(0);
+  setChecks(root, { check: { command: "printf 'Local assertion passed\\n'", expect: "Verify locally" } });
+  expect(invoke(root, ["verify"], github.env).code).toBe(0);
+  const run = saved(root);
+  expect(parseRecord(readFileSync(join(run.directory, "report.md"), "utf8")).record.status).toBe("passed");
+  expect(invoke(root, ["view", "report", run.data.id], github.env).code).toBe(0);
+  expect(github.state().calls).toEqual([]);
+});
+
+test("historical saved results without report.md can still be viewed without being rewritten", () => {
+  const root = project({ check: { command: "true", expect: "A historical check passes" } });
+  expect(invoke(root, ["verify"]).code).toBe(0);
+  const { directory, data } = saved(root);
+  const historical = { version: 1, id: data.id, startedAt: data.startedAt, finishedAt: data.finishedAt,
+    source: data.source, checks: data.checks, omitted: data.omitted };
+  writeFileSync(join(directory, "result.json"), JSON.stringify(historical));
+  rmSync(join(directory, "report.md"));
+  const before = snapshot(directory);
+  expect(invoke(root, ["view", "report", data.id]).code).toBe(0);
+  expect(snapshot(directory)).toEqual(before);
+});
+
+test("publishing uses the explicit run and accepts the same verified dirty content after a commit", () => {
+  const executions = join(temporaryDirectory(), "executions.txt");
+  const root = project({
+    pass: { command: `printf 'executed\\n' >> '${executions}'`, expect: "The requested check passes", reuse: true },
+    fail: { command: "false", expect: "A separate later attempt fails" },
+  });
+  write(root, "value.txt", "before");
+  write(root, ".groundwork/decisions/local.md", "# Keep verification local\n");
+  const plan = ".groundwork/plans/task.json";
+  write(root, plan, JSON.stringify({ goal: "Publish the verified change", decisions: [".groundwork/decisions/local.md"],
+    requirements: [{ id: "outcome", expect: "The requested check passes", checks: ["pass"] }] }));
+  git(root, "add", ".");
+  git(root, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "-qm", "Initial project");
+  write(root, "value.txt", "after");
+  expect(invoke(root, ["verify", "pass", "--plan", plan]).code).toBe(0);
+  const selected = saved(root);
+  const frozen = parseRecord(readFileSync(join(selected.directory, "report.md"), "utf8")).record;
+  expect(selected.data.source.dirty).toBe(true);
+  git(root, "add", ".");
+  git(root, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "-qm", "Commit verified content");
+  const head = git(root, "rev-parse", "HEAD");
+  expect(head).not.toBe(selected.data.source.revision);
+  expect(invoke(root, ["verify", "fail"]).code).toBe(1);
+  const newer = saved(root);
+  const github = fakeGitHub({ head });
+  const store = snapshot(evidenceStore(root).directory);
+  expect(invoke(root, ["publish", "pr", "7"], github.env).output).toContain("explicit --run");
+  expect(github.state().calls).toEqual([]);
+  const published = invoke(root, ["publish", "pr", "7", "--run", selected.data.id], github.env);
+  expect(published.code).toBe(0);
+  const remote = parseRecord(github.state().comments[0].body);
+  expect(remote.record).toEqual(frozen);
+  expect(remote.publication).toMatchObject({ headSha: head, status: "passed", sourceMatches: true });
+  expect(github.state().comments[0].body).toContain(`/blob/${head}/.groundwork/decisions/local.md`);
+  expect(github.state().calls.filter(call => call.body?.state).map(call => call.body.state)).toEqual(["pending", "success"]);
+  expect(readFileSync(executions, "utf8")).toBe("executed\n");
+  expect(snapshot(evidenceStore(root).directory)).toEqual(store);
+  expect(saved(root).data.id).toBe(newer.data.id);
+  const failed = invoke(root, ["publish", "pr", "--run", newer.data.id], github.env);
+  expect(failed.code).toBe(1);
+  expect(parseRecord(github.state().comments[1].body).publication.status).toBe("failed");
+  expect(github.state().calls.filter(call => call.body?.state).at(-1).body.state).toBe("failure");
+});
+
+test.each(["source", "environment", "ignored input", "evidence"])("publication reassesses changed %s without rewriting or rerunning the saved success", changed => {
+  const executions = join(temporaryDirectory(), "executions.txt");
+  const root = project({ check: { command: `printf 'executed\\n' >> '${executions}'`, expect: "Retain applicable verification",
+    reuse: { env: ["TEST_MODE"], files: [".fixture/value.txt"] } } });
+  write(root, ".gitignore", ".fixture/\n");
+  write(root, ".fixture/value.txt", "ready");
+  write(root, "value.txt", "original");
+  git(root, "add", ".");
+  git(root, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "-qm", "Verification inputs");
+  expect(invoke(root, ["verify"], { TEST_MODE: "ready" }).code).toBe(0);
+  const run = saved(root);
+  const report = readFileSync(join(run.directory, "report.md"), "utf8");
+  const result = readFileSync(join(run.directory, "result.json"), "utf8");
+  if (changed === "source") write(root, "value.txt", "changed");
+  if (changed === "ignored input") write(root, ".fixture/value.txt", "changed");
+  if (changed === "evidence") rmSync(join(run.directory, run.data.checks[0].log));
+  const github = fakeGitHub({ head: git(root, "rev-parse", "HEAD") });
+  const published = invoke(root, ["publish", "pr", github.url, "--run", run.data.id],
+    { ...github.env, TEST_MODE: changed === "environment" ? "changed" : "ready" });
+  expect(published.code).toBe(2);
+  const remote = parseRecord(github.state().comments[0].body);
+  expect(remote.record.status).toBe("passed");
+  expect(remote.publication.status).toBe("inconclusive");
+  expect(remote.publication.assessment.problems.join(" ")).toContain(changed === "source" ? "Source changed"
+    : changed === "evidence" ? "Evidence is missing" : "Receipt inputs changed");
+  expect(github.state().calls.filter(call => call.body?.state).at(-1).body.state).toBe("error");
+  expect(readFileSync(join(run.directory, "report.md"), "utf8")).toBe(report);
+  expect(readFileSync(join(run.directory, "result.json"), "utf8")).toBe(result);
+  expect(readFileSync(executions, "utf8")).toBe("executed\n");
+});
+
+test("publication retains an unsatisfied required review even when the command passes", () => {
+  const root = project({ check: { command: "true", expect: "The assertion passes" } });
+  write(root, ".groundwork/plans/task.json", JSON.stringify({ goal: "Review the checked outcome", requirements: [
+    { id: "reviewed", expect: "The outcome has been reviewed", checks: ["check"], review: true },
+  ] }));
+  git(root, "add", ".");
+  git(root, "-c", "user.name=Verification Test", "-c", "user.email=verify@example.test", "commit", "-qm", "Project checks");
+  expect(invoke(root, ["verify", "--plan", ".groundwork/plans/task.json"]).code).toBe(2);
+  const run = saved(root);
+  const github = fakeGitHub({ head: git(root, "rev-parse", "HEAD") });
+  expect(invoke(root, ["publish", "pr", "7", "--run", run.data.id], github.env).code).toBe(2);
+  const remote = parseRecord(github.state().comments[0].body);
+  expect(remote.record.checks[0].status).toBe("passed");
+  expect(remote.publication.status).toBe("inconclusive");
+  expect(remote.publication.assessment.coverage[0]).toMatchObject({ id: "reviewed", status: "unverified" });
+  expect(remote.publication.assessment.coverage[0].reason).toContain("review observation");
+});
+
+test.each([["passed", 0], ["failed", 1], ["inconclusive", 2], ["historical", 2]])("view pr reads %s published history by URL outside an adopted project", (outcome, code) => {
+  const projectRoot = project({ check: { command: "true", expect: "The source assertion passes" } });
+  write(projectRoot, ".groundwork/decisions/local.md", "# Keep the requested outcome\n");
+  write(projectRoot, ".groundwork/plans/task.json", JSON.stringify({ goal: "Keep the requested outcome", decisions: [".groundwork/decisions/local.md"], requirements: [
+    { id: "outcome", expect: "The requested outcome holds", checks: ["check"] },
+  ] }));
+  expect(invoke(projectRoot, ["verify", "--plan", ".groundwork/plans/task.json"]).code).toBe(0);
+  const template = parseRecord(readFileSync(join(saved(projectRoot).directory, "report.md"), "utf8")).record;
+  const head = "a".repeat(40);
+  function comment(id, status, current, startedAt) {
+    const record = { ...template, status: status === "failed" ? "failed" : "passed", run: { ...template.run, id, startedAt,
+      source: { ...template.run.source, revision: "b".repeat(40) } } };
+    const publication = { repository: "example/project", pullRequest: 7, headSha: current ? head : "c".repeat(40),
+      publisher: { id: 41, login: "publisher" }, status, sourceMatches: true, publishedAt: startedAt, assessment: { status, coverage: template.coverage,
+        problems: status === "inconclusive" ? ["Declared inputs need a fresh local verification."] : [] } };
+    return { id, user: { id: 41, login: "publisher" }, body: renderRecord(record, { publication }),
+      html_url: `https://github.example/example/project/pull/7#${id}` };
+  }
+  const historical = comment("historical", "passed", false, "2026-11-16T12:03:00Z");
+  const comments = outcome === "historical" ? [historical] : [
+    { id: 0, body: "An ordinary review comment." },
+    comment("older-green", "passed", true, "2026-11-16T12:01:00Z"), historical,
+    comment("latest-attempt", outcome, true, "2026-11-16T12:02:00Z"),
+  ];
+  const github = fakeGitHub({ head, comments });
+  const root = temporaryDirectory();
+  write(root, "README.md", "An unadopted directory.\n");
+  const before = snapshot(root);
+  const evidence = snapshot(process.env.GROUNDWORK_STATE_HOME);
+  const viewed = invoke(root, ["view", "pr", github.url], github.env);
+  expect(viewed.code).toBe(code);
+  expect(viewed.output).toContain(`Current PR head: ${head}`);
+  expect(viewed.output).toContain(`Tested revision: ${"b".repeat(40)}`);
+  expect(viewed.output).toContain("HISTORICAL");
+  expect(viewed.output).toContain("Decision: .groundwork/decisions/local.md");
+  expect(viewed.output).toContain("PASSED check: The source assertion passes");
+  expect(viewed.output).toContain(`EXECUTED: ${template.checks[0].receipt.reason}`);
+  if (outcome !== "historical") expect(viewed.output).toContain(`${outcome.toUpperCase()} — latest published attempt for this PR head: latest-attempt`);
+  if (outcome === "inconclusive") expect(viewed.output).toContain("Declared inputs need a fresh local verification");
+  expect(github.state().calls.filter(call => call.args[0] === "api").every(call => call.args[call.args.indexOf("--method") + 1] === "GET")).toBe(true);
+  expect(snapshot(root)).toEqual(before);
+  expect(snapshot(process.env.GROUNDWORK_STATE_HOME)).toEqual(evidence);
+});
+
+test("view pr reports a newer pending or unsuccessful publication alongside the retained passing record", () => {
+  const root = project({ check: { command: "true", expect: "The original assertion passes", reuse: true } });
+  expect(invoke(root, ["verify"]).code).toBe(0);
+  expect(invoke(root, ["verify"]).code).toBe(0);
+  const record = parseRecord(readFileSync(join(saved(root).directory, "report.md"), "utf8")).record;
+  expect(record.checks[0].receipt.disposition).toBe("reused");
+  const head = "a".repeat(40);
+  const publication = { repository: "example/project", pullRequest: 7, headSha: head, status: "passed", sourceMatches: true,
+    publisher: { id: 41, login: "publisher" }, assessment: { status: "passed", coverage: [], problems: [] } };
+  const comment = { id: 1, user: { id: 41, login: "publisher" }, body: renderRecord(record, { publication }) };
+  for (const [state, code] of [["pending", 2], ["error", 2], ["failure", 1]]) {
+    const github = fakeGitHub({ head, comments: [comment], statuses: [
+      { context: "groundwork/verification", state, description: "Latest publication attempt" },
+      { context: "groundwork/verification", state: "success", description: "Earlier completed publication" },
+    ] });
+    const viewed = invoke(temporaryDirectory(), ["view", "pr", github.url], github.env);
+    expect(viewed.code).toBe(code);
+    expect(viewed.output).toContain(`${state === "failure" ? "FAILED" : "INCONCLUSIVE"} — latest published attempt for this PR head: ${record.run.id}`);
+    expect(viewed.output).toContain(`Latest publication status: ${state.toUpperCase()} — Latest publication attempt`);
+    expect(viewed.output).toContain(`CURRENT PR HEAD · PASSED · ${record.run.id}`);
+    expect(viewed.output).toContain("PASSED check: The original assertion passes");
+    expect(viewed.output).toContain(`REUSED: ${record.checks[0].receipt.reason}`);
+  }
+});
+
+test("PR viewing reports a missing or unauthenticated gh without initializing the directory", () => {
+  const root = temporaryDirectory();
+  const github = fakeGitHub({ denied: true });
+  const missing = invoke(root, ["view", "pr", github.url], { PATH: temporaryDirectory() });
+  expect(missing.code).toBe(2);
+  expect(missing.output).toContain("GitHub CLI (gh) is required");
+  const denied = invoke(root, ["view", "pr", github.url], github.env);
+  expect(denied.code).toBe(2);
+  expect(denied.output).toContain("GitHub is unavailable");
+  expect(readdirSync(root)).toEqual([]);
 });

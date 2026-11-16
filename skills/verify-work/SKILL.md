@@ -13,14 +13,14 @@ Use the relevant sections of [playbooks.md](playbooks.md) to choose verification
 
 ## During ordinary work
 
-1. Read the request, project instructions, relevant code, callers and tests. Start with `.groundwork/VERIFY.md`, then use `groundwork view guide` to find project context, feature guides, maps and checks from `.groundwork/verify.d/*.json`. Project commands automatically convert older metadata before reading it. Handle missing setup or metadata repairs through the workflow below as part of the task. Follow relevant links and check their source claims. Use `explore` when entry points, ownership, dependencies or verification paths are unclear; reuse current findings from the task.
+1. Read the request, project instructions, relevant decisions, code, callers and tests. Consult the project's existing ADR location, or `.groundwork/decisions/`. Start with `.groundwork/VERIFY.md`, then use `groundwork view guide` to find project context, feature guides, maps and checks from `.groundwork/verify.d/*.json`. Project commands automatically convert older metadata before reading it. Handle missing setup or metadata repairs through the workflow below as part of the task. Follow relevant links and check their source claims. Use `explore` when entry points, ownership, dependencies or verification paths are unclear; reuse current findings from the task.
 2. Identify the intended outcomes, constraints, and deliverables before editing. Save a plan such as `.groundwork/plans/task.json` for multi-part changes or when coverage would otherwise be hard to track. Straightforward tasks can track their outcomes in the conversation. Ask only about uncertainty that materially changes the work.
 3. Choose relevant playbook cases and establish how to exercise the behaviour. Reproduce a reported bug when feasible, using the actual UI, API, or CLI entry point. A source-aware regression driver can later use `--base <ref>` to exercise both revisions.
-4. Make the smallest suitable change using existing patterns. Finish a coherent implementation batch before running checks. Keep working through relevant failures and report material blockers promptly.
+4. Make the smallest suitable change using existing patterns. Promote meaningful durable choices from task notes into the project's ADR location, or `.groundwork/decisions/<topic>.md`, before final verification. Keep each decision bounded, with status, reason, consequences and successor links; link it from the plan or relevant guidance. Finish a coherent implementation batch before running checks. Keep working through relevant failures and report material blockers promptly.
 5. When verification is configured, submit selected checks together with one `groundwork verify` invocation; add `--plan` to schedule its check and behaviour bindings. Required and active invariant checks remain included. Eligible checks may reuse matching receipts; use `--fresh` when a new execution is needed. Otherwise invoke the project's existing runner or a script. Add a regression test only for a realistic failure the current tests miss.
 6. Inspect the actual observations and saved evidence. For UI changes, inspect captured rendered states and the assertions from the interaction driver; compare against supplied references at relevant viewports. Use targeted interactive inspection when the evidence cannot resolve a visual or behavioural question. If the required observation is unavailable, leave that acceptance condition unverified and explain the gap.
 7. Review the complete diff for intended behaviour, missed requirements, fit with the existing design, unnecessary complexity, and unrelated changes. Fix concrete issues, including stale facts and links in affected existing maps. After further source changes, rerun affected checks. Stop once the outcome and required checks are satisfied.
-8. Close every original requirement with its result and evidence, or state its remaining gap. Retain the invocation's own run ID; use `groundwork view report <id>` rather than relying on a latest pointer another run may replace. Distinguish newly executed checks from reused receipts. Finish with the requested delivery state. For PR work, include relevant outstanding review feedback, base/conflict status and whether changes were pushed, according to the user's instructions.
+8. Close every original requirement with its result and evidence, or state its remaining gap. Retain the local record and invocation's own run ID regardless of GitHub availability; use `groundwork view report <id>` rather than relying on a latest pointer another run may replace. Distinguish newly executed checks from reused receipts. Finish with the requested delivery state, publishing the record as part of tasks that include PR delivery under existing permissions and approval rules. For PR work, include relevant outstanding review feedback, base/conflict status and whether changes were pushed, according to the user's instructions.
 
 Report each outcome as **verified**, **failed**, or **unverified**, with supporting observations. Bind a requirement to a check only after confirming that the check actually asserts it. Inspect images, traces, and other evidence before using them to support a claim.
 
@@ -49,6 +49,8 @@ groundwork verify [name ...]    Run selected checks and active invariants
 groundwork view guide [query]   Discover behaviours, invariants, and checks
 groundwork map [feature]        View an ASCII feature overview or direct relationships
 groundwork view report [id]     Inspect a specific run, or this workspace's latest
+groundwork publish pr [number-or-url] --run <id> Share an explicit local run
+groundwork view pr [number-or-url] Read published PR verification without running checks
 ```
 
 Groundwork adds required checks and active invariants. Plans schedule explicitly bound checks and checks covering their behaviours. Use `--changed` to select mapped areas, and inspect unmapped changes for additional verification needs. Without names or `--changed`, it selects all configured checks even with a plan.
@@ -66,6 +68,16 @@ CLI exit codes are `0` for passed, `1` for failed, and `2` for inconclusive. Dia
 Receipt matching covers all source content, check/engine/runtime identity, context, plan and declared inputs. The Git revision is retained as provenance and can be required by `reuse.revision`. Declared environment values are digested rather than exposed in receipts; relevant ignored files must be explicit inputs. Reuse is unavailable for repeated trials, baseline comparisons or checks with setup/cleanup. It preserves an earlier observation, not a new live observation. Inspect evidence and obtain fresh observations whenever the claim needs them.
 
 A plan requirement with `review: true` needs an evidence-backed `kind: "review"` observation explicitly covering its requirement ID, in addition to its bindings. The PR agent works on remaining gaps, including unsatisfied review obligations; valid exact-ID review evidence can satisfy the obligation without another agent pass. Failures remain failures even if later agent observations pass.
+
+## Local record and optional PR sharing
+
+Each local save derives `report.md` from authoritative `result.json`. Keep what was verified and why, source revision and dirty state, outcomes and fresh/reused provenance, context, timing, gaps and decision links in that account. A plan's optional `decisions` lists project-relative `.md` files containing durable rationale.
+
+For tasks including PR delivery, publish with `groundwork publish pr [number-or-url] --run <id>` using the invocation's own explicit run ID; omitting the PR selects the current branch's PR. Local-only tasks stay local. Publication uses a PR artifact when available, otherwise a readable comment with hidden versioned JSON. It reassesses the run and target source, preserving the original snapshot. Identical source content committed and pushed after a dirty run can match; coverage/review obligations still apply.
+
+`groundwork view pr` is read-only and shows recorded outcomes with current-head matching, not a fresh local-environment assessment. A PR URL works outside an adopted project. Historical records remain visible; remote accounts are context, not automatic local reuse proof.
+
+Full archives are optional, but claim-specific evidence and existing UI screenshot/inspection requirements still apply. Inspect actual observations before claiming success. See [the record contract](references/verification.md#local-records-and-pr-publication). Agents maintain decision links as part of the task, promoting lasting rationale before deleting temporary notes.
 
 ## Drivers and comparisons
 

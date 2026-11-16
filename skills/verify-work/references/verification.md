@@ -1,10 +1,12 @@
 # Verification reference
 
-Groundwork connects a task's requirements to project-owned assertions and inspectable evidence. Work through normal chat: identify the intended outcomes, reuse relevant checks and [playbooks](../playbooks.md), finish a coherent change, then verify the result. Save a plan when tracking multiple requirements helps; straightforward tasks can keep their outcomes in the conversation.
+Groundwork connects a task's requirements to project-owned assertions and inspectable evidence. Work through normal chat: identify the intended outcomes, consult relevant project decisions, reuse checks and [playbooks](../playbooks.md), finish a coherent change, then verify the result. Save a plan when tracking multiple requirements helps; straightforward tasks can keep their outcomes in the conversation.
 
 ## Task plans
 
 A plan has a nonempty `goal` and a nonempty `requirements` array. Every requirement is required and has a unique `id`, a nonempty `expect`, optional `checks` and `behaviours` arrays, and optional `review`. IDs start with a letter or number and can contain letters, numbers, `.`, `_`, `:`, and `-`.
+
+Optional top-level `decisions` is an array of project-relative `.md` file paths linking durable rationale, such as `[".groundwork/decisions/local-first-verification.md"]`. Paths must be relative and use forward slashes, without traversal, URLs, query strings, anchors or control characters. These links survive invariant expansion; they are neither requirements nor evidence and do not add coverage.
 
 `checks` explicitly names the project assertions that establish the requirement. `behaviours` links catalogue IDs covered by checks or observations. Choose bindings by reading the actual assertions: neither a matching label nor a file's existence proves that an arbitrary expectation was met. Missing required coverage remains **unverified**.
 
@@ -267,14 +269,46 @@ Inspect baseline logs and observations to confirm the intended failure, and insp
 
 ## Results and freshness
 
-Each run saves `result.json`, its plan snapshot when present, logs and trial artifacts in the external evidence store. The state root is `GROUNDWORK_STATE_HOME` when set, otherwise `$XDG_STATE_HOME/groundwork`, defaulting to `~/.local/state/groundwork`. Repository worktrees share an evidence namespace, with a separate latest-run pointer for each workspace. A new attempt becomes its workspace's latest immediately; each invocation assesses its own run ID, avoiding another invocation's latest pointer.
+Each run saves authoritative `result.json`, its plan snapshot when present, logs and trial artifacts in the external evidence store. Every local save also derives `report.md`, combining readable Markdown with hidden, versioned JSON. The state root is `GROUNDWORK_STATE_HOME` when set, otherwise `$XDG_STATE_HOME/groundwork`, defaulting to `~/.local/state/groundwork`. Repository worktrees share an evidence namespace, with a separate latest-run pointer for each workspace. A new attempt becomes its workspace's latest immediately; each invocation assesses its own run ID, avoiding another invocation's latest pointer.
 
 `groundwork view report [id]` rechecks saved source and evidence without rerunning commands; omit the ID for this workspace's latest. For checks with receipt keys, it also recomputes the current receipt identity. Changes to declared environment values, ignored input files, engine, runtime or context make a previously passing receipt-backed report inconclusive even without source changes. Checks without receipt keys retain source/evidence reassessment only.
 
-Source matching uses tracked and non-ignored untracked content. The Git revision remains provenance and can be part of a check's reuse identity. Groundwork's runtime paths (`runs/`, `latest`, `plans/`, `tasks/` and `tmp/` inside `.groundwork/`) and legacy `.verify/` output are excluded. Guides, maps, configuration, reusable scripts and supporting configs remain source inputs. Declare relevant ignored files and environment variables for reuse, and obtain fresh observations for changing external state.
+Source matching uses tracked and non-ignored untracked content. The Git revision remains provenance and can be part of a check's reuse identity. Groundwork's runtime paths (`runs/`, `latest`, `plans/`, `tasks/` and `tmp/` inside `.groundwork/`) and legacy `.verify/` output are excluded. Guides, maps, decisions, configuration, reusable scripts and supporting configs remain source inputs. Declare relevant ignored files and environment variables for reuse, and obtain fresh observations for changing external state.
 
 Project preparation automatically migrates `.groundwork/runs`, `.verify/runs` and latest pointers to external storage. Generated originals are removed only after preservation. Malformed or orphaned old latest pointers are retained in the external store rather than blocking a fresh run. The store must not overlap legacy runtime directories. Historical reports retain their original source identity and evidence; migration does not make them current receipts.
 
 The portal reads both external and legacy reports, including saved receipts. Its snapshots do not perform the freshness reassessment of `view report` and do not establish that an unfinished run is still executing.
 
 Requirements report **verified**, **failed**, or **unverified**. The overall result is **passed / 0** when checks and required coverage are complete, **failed / 1** when a failure was observed, or **inconclusive / 2** when completion cannot be established. Failures remain visible alongside missing coverage or evidence. Inspect the actual assertions, images, traces, and measurements before closing every requirement or reporting its gap.
+
+## Local records and PR publication
+
+Every initialized run keeps a local record independently of GitHub or a PR. A single hidden block starts with `<!-- groundwork-record:v1` and ends with `-->`, each delimiter on its own line. The JSON payload between them contains `record` and `publication`. `record` preserves the run snapshot:
+
+- `version` is `1`; `status` is the recorded `passed`, `failed` or `inconclusive` outcome.
+- `run` identifies the local/PR run, source content/revision/dirty state, timing, check selection, context and runner. Unknown source is `null`; `finishedAt: null` marks an incomplete run. Early failures remain representable without inventing source or completion.
+- `plan` retains the goal, requirement bindings and optional decision links, or is `null` when unavailable.
+- `checks` and `observations` retain commands, expectations, observed results, bindings and evidence references. Check receipts describe fresh/reused provenance; rich trials and reusable proof remain in authoritative local data.
+- `coverage` gives each requirement's `verified`, `failed` or `unverified` outcome, supporting checks/observations and review obligation.
+- `stages` records outer lifecycle outcomes; `gaps` collects incomplete coverage, selection, stage and assessment problems.
+
+Passing records need identified source, start/finish times and a nonempty check or observation scope. `publication` is `null` locally, or a separate PR assessment with target/provenance, `status`, `headSha`, `sourceMatches`, and assessed coverage/problems. Its freshly assessed status controls the published headline while the original `record.status` remains visible and unchanged. An older pass cannot override a publication assessment that no longer applies to the target.
+
+The generated account belongs with its run in the external evidence store. Record concrete assertions and observed outcomes: a command's exit code alone does not establish the user's intended behaviour. Local receipt data stays separate and continues to enforce input matching and retained-evidence validation. A record explains a result; it is not evidence for its own claims.
+
+PR publication is separate from local verification. Agents handle it as part of tasks that include PR delivery, under existing permissions and approval rules; local-only tasks stay local:
+
+```text
+groundwork publish pr [number-or-url] --run <id>
+groundwork view pr [number-or-url]
+```
+
+Publishing requires the invocation's own explicit run ID; omitting the PR selects the current branch's PR. It prefers a PR artifact when available, otherwise a comment with readable Markdown and hidden, versioned JSON. Publication reassesses the actual saved run and target source, retaining the original snapshot alongside a fresh publication assessment. Source content can match after verified dirty work is committed and pushed; the original Git SHA need not equal the PR head. Required coverage and review obligations still govern status. Stale or incomplete reports remain identifiable; recorded failures stay failed. An unavailable publication channel is separate from the local verification outcome.
+
+`groundwork view pr` shows recorded outcomes and current-head matching without running checks, reassessing the local environment, migrating metadata, or changing the PR. A PR URL works outside an adopted repository. Historical records remain visible. Current-head records and the latest `groundwork/verification` commit status determine exit `0` for passed, `1` for failed, or `2` for incomplete or absent. A newer pending/error status returns `2` even if an older record passed; a failure status returns `1`. Remote accounts do not automatically enter the local receipt store or establish reusable proof.
+
+Full run archives are optional publication attachments. Their absence alone is not a verification failure, and attaching one does not satisfy missing coverage. Preserve evidence required by checks and observations, including existing UI screenshot and visual-inspection expectations. Simple command output or response data is often sufficient for a non-visual claim; reports should link richer assets when they are needed and available.
+
+### Durable decisions
+
+Consult the project's existing ADR location before work. If it has none, use `.groundwork/decisions/<topic>.md`. Agents promote meaningful choices from temporary task notes before final verification and note deletion, keeping one bounded file per decision with status, reason and consequences. Preserve superseded records and link successors. Link relevant records from guides, maps, plans and reports; no central index or user-maintained log is required. Routine implementation choices need no ADR.
